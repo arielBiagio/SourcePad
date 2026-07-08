@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>terminal://chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    --bg: #0B0E14;
+    --surface: #11151D;
+    --surface-2: #161B26;
+    --border: #232B3A;
+    --text: #E6EAF2;
+    --text-dim: #6B7688;
+    --accent: #7C9CFF;
+    --accent-dim: #3A4468;
+    --ok: #5EEAD4;
+  }
+  *{ font-family: 'Space Grotesk', sans-serif; }
+  .mono{ font-family: 'JetBrains Mono', monospace; }
+  body{ background: var(--bg); }
+
+  ::-webkit-scrollbar{ width: 8px; }
+  ::-webkit-scrollbar-track{ background: transparent; }
+  ::-webkit-scrollbar-thumb{ background: var(--border); border-radius: 8px; }
+
+  .scanline{
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 2px,
+      rgba(124,156,255,0.015) 3px
+    );
+  }
+
+  .msg-in{
+    animation: msgIn .35s cubic-bezier(.16,1,.3,1) both;
+  }
+  @keyframes msgIn{
+    from{ opacity:0; transform: translateY(8px); }
+    to{ opacity:1; transform: translateY(0); }
+  }
+
+  .cursor-blink{
+    animation: blink 1s step-start infinite;
+  }
+  @keyframes blink{
+    50%{ opacity: 0; }
+  }
+
+  .dot{
+    animation: dotPulse 1.4s ease-in-out infinite;
+  }
+  .dot:nth-child(2){ animation-delay: .15s; }
+  .dot:nth-child(3){ animation-delay: .3s; }
+  @keyframes dotPulse{
+    0%,60%,100%{ opacity: .25; transform: scale(.85); }
+    30%{ opacity: 1; transform: scale(1); }
+  }
+
+  .glow-border:focus-within{
+    box-shadow: 0 0 0 1px var(--accent), 0 0 24px -4px rgba(124,156,255,0.35);
+  }
+
+  textarea{ field-sizing: content; }
+</style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 sm:p-6 scanline">
+
+  <div class="w-full max-w-2xl h-[85vh] flex flex-col rounded-2xl border overflow-hidden" style="background: var(--surface); border-color: var(--border);">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between px-5 py-4 border-b" style="border-color: var(--border); background: var(--surface-2);">
+      <div class="flex items-center gap-3">
+        <div class="relative w-2.5 h-2.5">
+          <span id="statusDot" class="absolute inset-0 rounded-full" style="background: var(--ok);"></span>
+          <span id="statusPing" class="absolute inset-0 rounded-full animate-ping" style="background: var(--ok); opacity:.6;"></span>
+        </div>
+        <div>
+          <p class="text-sm font-semibold tracking-tight" style="color: var(--text);">sesión activa</p>
+          <p class="mono text-[11px]" style="color: var(--text-dim);" id="statusText">localhost:3000/api/chat</p>
+        </div>
+      </div>
+      <button id="clearBtn" class="mono text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors hover:opacity-100" style="border-color: var(--border); color: var(--text-dim);" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-dim)'">
+        limpiar
+      </button>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages" class="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-5">
+      <div class="msg-in flex flex-col gap-1.5 max-w-[85%]">
+        <span class="mono text-[10px] uppercase tracking-wider" style="color: var(--text-dim);">sistema</span>
+        <div class="rounded-xl rounded-tl-sm px-4 py-3 border text-sm leading-relaxed" style="background: var(--surface-2); border-color: var(--border); color: var(--text-dim);">
+          Escribí un mensaje abajo. Se enviará por <span class="mono" style="color: var(--accent);">POST</span> a
+          <span class="mono" style="color: var(--accent);">/api/chat</span> y se pintará la respuesta del campo
+          <span class="mono" style="color: var(--accent);">respuesta</span>.
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="p-4 border-t" style="border-color: var(--border); background: var(--surface-2);">
+      <form id="chatForm" class="flex items-end gap-2 rounded-xl border px-3 py-2 transition-shadow glow-border" style="background: var(--bg); border-color: var(--border);">
+        <span class="mono text-sm pb-1.5 select-none" style="color: var(--accent);">&gt;</span>
+        <textarea
+          id="userInput"
+          rows="1"
+          placeholder="Escribí tu mensaje..."
+          class="flex-1 bg-transparent resize-none outline-none text-sm py-1.5 max-h-32"
+          style="color: var(--text);"
+        ></textarea>
+        <button
+          type="submit"
+          id="sendBtn"
+          class="flex items-center justify-center w-9 h-9 rounded-lg shrink-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          style="background: var(--accent); color: var(--bg);"
+        >
+          <svg id="sendIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"></line>
+            <polyline points="5 12 12 5 19 12"></polyline>
+          </svg>
+        </button>
+      </form>
+      <p class="mono text-[10px] mt-2 px-1" style="color: var(--text-dim);">Enter para enviar · Shift+Enter para salto de línea</p>
+    </div>
+
+  </div>
+
+<script>
+  const API_URL = 'http://localhost:3000/api/chat';
+
+  // Memoria de la conversación (Sliding Window) — el backend espera este historial completo en cada request
+  let historialDeMensajes = [];
+
+  const form = document.getElementById('chatForm');
+  const input = document.getElementById('userInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const sendIcon = document.getElementById('sendIcon');
+  const messages = document.getElementById('messages');
+  const clearBtn = document.getElementById('clearBtn');
+  const statusDot = document.getElementById('statusDot');
+  const statusPing = document.getElementById('statusPing');
+  const statusText = document.getElementById('statusText');
+
+  // auto-resize textarea
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 128) + 'px';
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    messages.innerHTML = '';
+    historialDeMensajes = [];
+  });
+
+  function scrollToBottom() {
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function addMessage({ role, text }) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `msg-in flex flex-col gap-1.5 max-w-[85%] ${role === 'user' ? 'items-end self-end' : 'items-start self-start'}`;
+
+    const label = document.createElement('span');
+    label.className = 'mono text-[10px] uppercase tracking-wider';
+    label.style.color = 'var(--text-dim)';
+    label.textContent = role === 'user' ? 'vos' : 'asistente';
+
+    const bubble = document.createElement('div');
+    bubble.className = `rounded-xl px-4 py-3 border text-sm leading-relaxed whitespace-pre-wrap ${role === 'user' ? 'rounded-tr-sm' : 'rounded-tl-sm'}`;
+
+    if (role === 'user') {
+      bubble.style.background = 'var(--accent-dim)';
+      bubble.style.borderColor = 'var(--accent)';
+      bubble.style.color = 'var(--text)';
+    } else {
+      bubble.style.background = 'var(--surface-2)';
+      bubble.style.borderColor = 'var(--border)';
+      bubble.style.color = 'var(--text)';
+    }
+
+    bubble.textContent = text;
+    wrapper.appendChild(label);
+    wrapper.appendChild(bubble);
+    messages.appendChild(wrapper);
+    scrollToBottom();
+    return wrapper;
+  }
+
+  function addLoadingBubble() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'msg-in flex flex-col gap-1.5 max-w-[85%] items-start self-start';
+    wrapper.id = 'loadingBubble';
+
+    const label = document.createElement('span');
+    label.className = 'mono text-[10px] uppercase tracking-wider';
+    label.style.color = 'var(--text-dim)';
+    label.textContent = 'asistente';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'rounded-xl rounded-tl-sm px-4 py-3.5 border flex items-center gap-1.5';
+    bubble.style.background = 'var(--surface-2)';
+    bubble.style.borderColor = 'var(--border)';
+
+    for (let i = 0; i < 3; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'dot w-1.5 h-1.5 rounded-full';
+      dot.style.background = 'var(--text-dim)';
+      bubble.appendChild(dot);
+    }
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(bubble);
+    messages.appendChild(wrapper);
+    scrollToBottom();
+  }
+
+  function removeLoadingBubble() {
+    const el = document.getElementById('loadingBubble');
+    if (el) el.remove();
+  }
+
+  function setStatus(state) {
+    // state: 'idle' | 'loading' | 'error'
+    if (state === 'loading') {
+      statusDot.style.background = 'var(--accent)';
+      statusPing.style.background = 'var(--accent)';
+      statusText.textContent = 'esperando respuesta...';
+    } else if (state === 'error') {
+      statusDot.style.background = '#F87171';
+      statusPing.style.background = '#F87171';
+      statusText.textContent = 'error de conexión';
+    } else {
+      statusDot.style.background = 'var(--ok)';
+      statusPing.style.background = 'var(--ok)';
+      statusText.textContent = 'localhost:3000/api/chat';
+    }
+  }
+
+  function setLoadingUI(isLoading) {
+    sendBtn.disabled = isLoading;
+    input.disabled = isLoading;
+    sendIcon.style.opacity = isLoading ? '0' : '1';
+  }
+
+  async function sendMessage(text) {
+    setLoadingUI(true);
+    setStatus('loading');
+    addLoadingBubble();
+
+    // Guardamos el turno del usuario en la memoria antes de enviar el request
+    historialDeMensajes.push({ role: 'user', content: text });
+
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ historial: historialDeMensajes })
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const respuestaDeLaIA = data.respuesta ?? '(la respuesta no incluyó el campo "respuesta")';
+
+      removeLoadingBubble();
+      addMessage({ role: 'assistant', text: respuestaDeLaIA });
+
+      // Guardamos el turno del asistente en la memoria para que la ventana siga creciendo
+      historialDeMensajes.push({ role: 'assistant', content: respuestaDeLaIA });
+
+      setStatus('idle');
+    } catch (err) {
+      removeLoadingBubble();
+      addMessage({
+        role: 'assistant',
+        text: `No se pudo conectar con ${API_URL}.\nDetalle: ${err.message}`
+      });
+      setStatus('error');
+    } finally {
+      setLoadingUI(false);
+      input.focus();
+    }
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+
+    addMessage({ role: 'user', text });
+    input.value = '';
+    input.style.height = 'auto';
+    sendMessage(text);
+  });
+
+  input.focus();
+</script>
+</body>
+</html>
