@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
 <style>
   :root{
     --bg: #0B0E14;
@@ -66,6 +67,51 @@
   }
 
   textarea{ field-sizing: content; }
+
+  /* Formato para el Markdown parseado dentro de las burbujas del asistente */
+  .markdown-content{ }
+  .markdown-content p{ margin: 0 0 0.6em 0; }
+  .markdown-content p:last-child{ margin-bottom: 0; }
+  .markdown-content strong{ color: var(--text); font-weight: 700; }
+  .markdown-content em{ font-style: italic; }
+  .markdown-content ul, .markdown-content ol{ margin: 0 0 0.6em 0; padding-left: 1.25em; }
+  .markdown-content ul{ list-style: disc; }
+  .markdown-content ol{ list-style: decimal; }
+  .markdown-content li{ margin-bottom: 0.2em; }
+  .markdown-content li:last-child{ margin-bottom: 0; }
+  .markdown-content a{ color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .markdown-content code{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+    background: rgba(124,156,255,0.12);
+    border: 1px solid var(--border);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  .markdown-content pre{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75em 1em;
+    overflow-x: auto;
+    margin: 0 0 0.6em 0;
+  }
+  .markdown-content pre code{
+    background: none;
+    border: none;
+    padding: 0;
+  }
+  .markdown-content blockquote{
+    border-left: 2px solid var(--accent);
+    padding-left: 0.75em;
+    margin: 0 0 0.6em 0;
+    color: var(--text-dim);
+  }
+  .markdown-content h1, .markdown-content h2, .markdown-content h3{
+    font-weight: 700;
+    margin: 0.4em 0 0.4em 0;
+  }
+  .markdown-content hr{ border: none; border-top: 1px solid var(--border); margin: 0.6em 0; }
 </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 sm:p-6 scanline">
@@ -123,6 +169,17 @@
             <polyline points="5 12 12 5 19 12"></polyline>
           </svg>
         </button>
+        <button
+          type="button"
+          id="cancelBtn"
+          class="hidden items-center justify-center w-9 h-9 rounded-lg shrink-0 transition-all border"
+          style="background: var(--surface-2); border-color: #F87171; color: #F87171;"
+          title="Detener generación"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+          </svg>
+        </button>
       </form>
       <p class="mono text-[10px] mt-2 px-1" style="color: var(--text-dim);">Enter para enviar · Shift+Enter para salto de línea</p>
     </div>
@@ -135,9 +192,25 @@
   // Memoria de la conversación (Sliding Window) — el backend espera este historial completo en cada request
   let historialDeMensajes = [];
 
+  // Cola de caracteres pendientes de pintar (efecto máquina de escribir) y el id del intervalo que la vacía
+  let colaDeTexto = '';
+  let typewriterIntervalId = null;
+
+  // Controlador para poder cancelar el fetch de streaming en curso
+  let abortController = null;
+
+  // Referencia a la función que corta la generación actual (funciona aunque el fetch ya haya terminado
+  // y solo quede corriendo la animación de la máquina de escribir)
+  let cancelarGeneracionActual = null;
+
+  // Scroll inteligente: si el usuario sube a leer mensajes viejos, dejamos de forzar el scroll al fondo
+  let autoScrollActivo = true;
+  const UMBRAL_SCROLL_PX = 48;
+
   const form = document.getElementById('chatForm');
   const input = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
   const sendIcon = document.getElementById('sendIcon');
   const messages = document.getElementById('messages');
   const clearBtn = document.getElementById('clearBtn');
@@ -161,9 +234,17 @@
   clearBtn.addEventListener('click', () => {
     messages.innerHTML = '';
     historialDeMensajes = [];
+    autoScrollActivo = true;
+  });
+
+  // Detecta si el usuario está leyendo mensajes anteriores (scrolleó hacia arriba)
+  messages.addEventListener('scroll', () => {
+    const distanciaAlFondo = messages.scrollHeight - messages.scrollTop - messages.clientHeight;
+    autoScrollActivo = distanciaAlFondo <= UMBRAL_SCROLL_PX;
   });
 
   function scrollToBottom() {
+    if (!autoScrollActivo) return;
     messages.scrollTop = messages.scrollHeight;
   }
 
@@ -177,7 +258,7 @@
     label.textContent = role === 'user' ? 'vos' : 'asistente';
 
     const bubble = document.createElement('div');
-    bubble.className = `rounded-xl px-4 py-3 border text-sm leading-relaxed whitespace-pre-wrap ${role === 'user' ? 'rounded-tr-sm' : 'rounded-tl-sm'}`;
+    bubble.className = `rounded-xl px-4 py-3 border text-sm leading-relaxed ${role === 'user' ? 'rounded-tr-sm whitespace-pre-wrap' : 'rounded-tl-sm markdown-content'}`;
 
     if (role === 'user') {
       bubble.style.background = 'var(--accent-dim)';
@@ -194,7 +275,7 @@
     wrapper.appendChild(bubble);
     messages.appendChild(wrapper);
     scrollToBottom();
-    return wrapper;
+    return bubble;
   }
 
   function addLoadingBubble() {
@@ -251,6 +332,16 @@
     sendBtn.disabled = isLoading;
     input.disabled = isLoading;
     sendIcon.style.opacity = isLoading ? '0' : '1';
+
+    if (isLoading) {
+      sendBtn.classList.add('hidden');
+      cancelBtn.classList.remove('hidden');
+      cancelBtn.classList.add('flex');
+    } else {
+      sendBtn.classList.remove('hidden');
+      cancelBtn.classList.add('hidden');
+      cancelBtn.classList.remove('flex');
+    }
   }
 
   async function sendMessage(text) {
@@ -261,45 +352,169 @@
     // Guardamos el turno del usuario en la memoria antes de enviar el request
     historialDeMensajes.push({ role: 'user', content: text });
 
+    // Nuevo controlador para este request: permite cortar el fetch de streaming en cualquier momento
+    abortController = new AbortController();
+
+    let respuestaDeLaIA = '';   // texto completo real (markdown crudo), tal cual llega del backend
+    let textoPintado = '';      // subconjunto de respuestaDeLaIA ya revelado letra por letra en pantalla
+    let bubbleActiva = null;    // burbuja del DOM donde se va pintando letra por letra
+    let streamFinalizado = false;
+    let generacionCancelada = false; // evita que se cierre dos veces si se cancela y además dispara AbortError
+    colaDeTexto = '';
+
+    // Vacía colaDeTexto un carácter a la vez, con un intervalo corto, para el efecto máquina de escribir
+    function iniciarTypewriter() {
+      if (typewriterIntervalId !== null) return; // ya está corriendo, no duplicar el intervalo
+
+      typewriterIntervalId = setInterval(() => {
+        if (colaDeTexto.length > 0) {
+          const siguienteCaracter = colaDeTexto.charAt(0);
+          colaDeTexto = colaDeTexto.slice(1);
+          textoPintado += siguienteCaracter;
+
+          // Re-parseamos el Markdown acumulado hasta ahora y lo pintamos como HTML real
+          bubbleActiva.innerHTML = marked.parse(textoPintado);
+          scrollToBottom();
+        } else if (streamFinalizado) {
+          // ya no quedan letras por pintar y el backend terminó de mandar el stream: cerramos todo
+          clearInterval(typewriterIntervalId);
+          typewriterIntervalId = null;
+
+          historialDeMensajes.push({ role: 'assistant', content: respuestaDeLaIA });
+          setStatus('idle');
+          setLoadingUI(false);
+          input.focus();
+
+          // Recién ahora la generación terminó de verdad: soltamos las referencias de cancelación
+          abortController = null;
+          cancelarGeneracionActual = null;
+        }
+      }, 20); // ajustable entre 15ms y 30ms
+    }
+
+    // Se llama cuando el usuario aprieta "Cancelar": corta todo de forma prolija, sea cual sea el estado
+    // del fetch (en vuelo o ya terminado) y cierra el historial. Sirve tanto para el click directo del
+    // usuario como para cuando el AbortController efectivamente corta un fetch que seguía en curso.
+    function finalizarPorCancelacion() {
+      if (generacionCancelada) return; // ya se cerró por este mismo motivo, no lo hacemos dos veces
+      generacionCancelada = true;
+
+      if (abortController) {
+        abortController.abort(); // por si el fetch/reader seguían en vuelo
+      }
+
+      if (typewriterIntervalId) {
+        clearInterval(typewriterIntervalId);
+        typewriterIntervalId = null;
+      }
+      colaDeTexto = ''; // descartamos lo que quedaba pendiente de animar
+
+      if (!bubbleActiva) {
+        // el usuario canceló antes de que llegara el primer fragmento
+        removeLoadingBubble();
+      } else {
+        // mostramos de una todo lo que alcanzamos a recibir, sin esperar a que el typewriter lo termine de revelar
+        bubbleActiva.innerHTML = marked.parse(respuestaDeLaIA);
+      }
+
+      // Guardamos en la memoria solo lo que realmente se generó (si hubo algo)
+      if (respuestaDeLaIA) {
+        historialDeMensajes.push({ role: 'assistant', content: respuestaDeLaIA });
+      }
+
+      setStatus('idle');
+      setLoadingUI(false);
+      input.focus();
+
+      abortController = null;
+      cancelarGeneracionActual = null;
+    }
+
+    // Mientras esta generación esté activa, el botón de cancelar puede llamar a esta función en cualquier momento
+    cancelarGeneracionActual = finalizarPorCancelacion;
+
     try {
       const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ historial: historialDeMensajes })
+        body: JSON.stringify({ historial: historialDeMensajes }),
+        signal: abortController.signal
       });
 
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
 
-      const data = await res.json();
-      const respuestaDeLaIA = data.respuesta ?? '(la respuesta no incluyó el campo "respuesta")';
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
 
-      removeLoadingBubble();
-      addMessage({ role: 'assistant', text: respuestaDeLaIA });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      // Guardamos el turno del asistente en la memoria para que la ventana siga creciendo
-      historialDeMensajes.push({ role: 'assistant', content: respuestaDeLaIA });
+        const chunk = decoder.decode(value, { stream: true });
+        if (!chunk) continue;
 
-      setStatus('idle');
+        respuestaDeLaIA += chunk;
+        colaDeTexto += chunk;
+
+        // En cuanto llega el primer fragmento, apagamos el loading y arrancamos la burbuja real
+        if (!bubbleActiva) {
+          removeLoadingBubble();
+          bubbleActiva = addMessage({ role: 'assistant', text: '' });
+        }
+
+        iniciarTypewriter();
+      }
+
+      // Por si el stream terminó sin mandar ningún fragmento
+      if (!bubbleActiva) {
+        removeLoadingBubble();
+        bubbleActiva = addMessage({ role: 'assistant', text: '' });
+      }
+
+      streamFinalizado = true;
+      iniciarTypewriter(); // asegura que el intervalo quede corriendo hasta drenar la cola y cerrar
+      // OJO: acá NO tocamos abortController ni cancelarGeneracionActual — el typewriter puede seguir
+      // animando texto varios segundos más, y el botón de cancelar tiene que seguir funcionando hasta
+      // que termine de verdad (eso se resuelve dentro del propio intervalo, arriba).
     } catch (err) {
+      if (err.name === 'AbortError') {
+        // Cancelación intencional del usuario: cerramos todo de forma prolija, sin mostrarlo como error
+        finalizarPorCancelacion();
+        return;
+      }
+
+      if (typewriterIntervalId) {
+        clearInterval(typewriterIntervalId);
+        typewriterIntervalId = null;
+      }
       removeLoadingBubble();
       addMessage({
         role: 'assistant',
         text: `No se pudo conectar con ${API_URL}.\nDetalle: ${err.message}`
       });
       setStatus('error');
-    } finally {
       setLoadingUI(false);
       input.focus();
+
+      abortController = null;
+      cancelarGeneracionActual = null;
     }
   }
+
+  cancelBtn.addEventListener('click', () => {
+    if (cancelarGeneracionActual) {
+      cancelarGeneracionActual();
+    }
+  });
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
 
+    autoScrollActivo = true; // al mandar un mensaje nuevo, siempre volvemos a seguir el flujo del chat
     addMessage({ role: 'user', text });
     input.value = '';
     input.style.height = 'auto';

@@ -24,41 +24,50 @@ app.use(express.static(__dirname));
 // --- LA RUTA DE LA API DONDE LLEGARÁ TU FRONTEND ---
 app.post("/api/chat", async (req, res) => {
   try {
-    const { historial } = req.body; // Recibimos el array completo desde la web
-
-    // --- AQUÍ OCURRE LA MAGIA DE LA VENTANA DE DESLIZAMIENTO ---
-    // Definimos el límite máximo de mensajes del historial que queremos recordar
-    const LIMITE_MEMORIA = 6; 
-    
-    // Con .slice(-LIMITE_MEMORIA) tomamos únicamente los últimos 6 elementos del array
+    const { historial } = req.body;
+    const LIMITE_MEMORIA = 6;
     const historialRecortado = historial.slice(-LIMITE_MEMORIA);
-    // -----------------------------------------------------------
 
-    // Definimos la personalidad fija del sistema
     const mensajeSistema = { 
       role: "system", 
       content: "Eres un asistente de IA integrado en una interfaz personalizada. Sé amigable y conciso." 
     };
 
-    // Unimos la personalidad base con la ventana de memoria recortada
     const mensajesParaIA = [mensajeSistema, ...historialRecortado];
 
-    // Llamamos a OpenRouter con los datos optimizados
-    const response = await openai.chat.completions.create({
+    // 1. Configuramos las cabeceras HTTP para indicarle al navegador que enviaremos un flujo continuo (SSE)
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    // 2. Llamamos a OpenRouter activando la opción 'stream: true'
+    const stream = await openai.chat.completions.create({
       model: "nvidia/nemotron-3-nano-30b-a3b:free",
       messages: mensajesParaIA,
+      stream: true, // 👈 LA CLAVE DEL STREAMING
     });
 
-    const respuestaIA = response.choices[0].message.content;
+    // 3. Iteramos de forma asíncrona sobre cada palabra que nos manda el modelo
+    for await (const chunk of stream) {
+      const textoParticula = chunk.choices[0]?.delta?.content || "";
+      if (textoParticula) {
+        // Enviamos la partícula de texto inmediatamente al navegador
+        res.write(textoParticula);
+      }
+    }
 
-    // Devolvemos el texto al frontend
-    res.json({ respuesta: respuestaIA });
+    // 4. Cerramos la conexión cuando la IA termine de hablar
+    res.end();
 
   } catch (error) {
-    console.error("❌ Error en el servidor:", error);
-    res.status(500).json({ error: "Hubo un problema al procesar la solicitud con la IA." });
+    console.error("❌ Error en streaming:", error.message);
+    // Si ocurre un error antes de empezar a escribir, respondemos con código 500
+    if (!res.headersSent) {
+      res.status(500).send("Hubo un problema con el flujo de la IA.");
+    }
   }
 });
+
 
 // Inicia el servidor
 app.listen(PORT, () => {
