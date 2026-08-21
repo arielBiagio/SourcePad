@@ -130,9 +130,15 @@
           <p class="mono text-[11px]" style="color: var(--text-dim);" id="statusText">localhost:3000/api/chat</p>
         </div>
       </div>
-      <button id="clearBtn" class="mono text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors hover:opacity-100" style="border-color: var(--border); color: var(--text-dim);" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-dim)'">
-        limpiar
-      </button>
+      <div class="flex items-center gap-2">
+        <span id="userName" class="mono text-[10px] max-w-28 truncate hidden sm:inline" style="color: var(--text-dim);"></span>
+        <button id="logoutBtn" class="mono text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors hover:opacity-100" style="border-color: var(--border); color: var(--text-dim);" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-dim)'">
+          salir
+        </button>
+        <button id="clearBtn" class="mono text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors hover:opacity-100" style="border-color: var(--border); color: var(--text-dim);" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-dim)'">
+          limpiar
+        </button>
+      </div>
     </div>
 
     <!-- Messages -->
@@ -214,6 +220,8 @@
   const sendIcon = document.getElementById('sendIcon');
   const messages = document.getElementById('messages');
   const clearBtn = document.getElementById('clearBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const userName = document.getElementById('userName');
   const statusDot = document.getElementById('statusDot');
   const statusPing = document.getElementById('statusPing');
   const statusText = document.getElementById('statusText');
@@ -509,6 +517,19 @@
     }
   });
 
+  logoutBtn.addEventListener('click', async () => {
+    logoutBtn.disabled = true;
+
+    try {
+      await fetch('/api/auth/sign-out', {
+        method: 'POST',
+        credentials: 'same-origin'
+      });
+    } finally {
+      window.location.replace('/auth.html');
+    }
+  });
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = input.value.trim();
@@ -521,7 +542,25 @@
     sendMessage(text);
   });
 
-  input.focus();
+  async function initializeSession() {
+    try {
+      const response = await fetch('/api/me', { credentials: 'same-origin' });
+
+      if (!response.ok) {
+        window.location.replace('/auth.html');
+        return;
+      }
+
+      const session = await response.json();
+      userName.textContent = session.user?.name || session.user?.email || 'sesión activa';
+      input.focus();
+    } catch (error) {
+      setStatus('error');
+      statusText.textContent = 'no se pudo validar la sesión';
+    }
+  }
+
+  initializeSession();
 </script>
 </body>
 </html>
