@@ -1,2 +1,5 @@
 .env
 node_modules/
+auth.sqlite
+auth.sqlite-shm
+auth.sqlite-wal
