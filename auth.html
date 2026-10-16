@@ -6,7 +6,7 @@
   <title>terminal://auth</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/assets/tailwind.css">
   <style>
     :root{
       --bg: #0B0E14;
@@ -80,6 +80,10 @@
       font-size: 10px;
     }
 
+    @media (prefers-reduced-motion: reduce){
+      *, *::before, *::after{ animation: none !important; transition: none !important; }
+    }
+
     @keyframes authError{
       0%{ opacity: 0; transform: translateY(-5px) scale(.98); }
       45%{ opacity: 1; transform: translateX(-4px) scale(1.01); }
@@ -139,13 +143,12 @@
 
       <div class="rounded-xl border p-4" style="background: rgba(11,14,20,.52); border-color: var(--border);">
         <div class="flex items-center justify-between mb-3">
-          <span class="mono text-[10px] uppercase tracking-wider" style="color: var(--text-dim);">system check</span>
+          <span class="mono text-[10px] uppercase tracking-wider" style="color: var(--text-dim);">tu espacio personal</span>
           <span class="flex items-center gap-2 mono text-[10px]" style="color: var(--ok);"><span class="status-dot w-1.5 h-1.5 rounded-full" style="background: var(--ok);"></span>ready</span>
         </div>
         <div class="space-y-2 mono text-[10px]" style="color: var(--text-dim);">
-          <div class="flex justify-between gap-4"><span>session.encryption</span><span style="color: var(--text);">enabled</span></div>
-          <div class="flex justify-between gap-4"><span>assistant.endpoint</span><span style="color: var(--accent);">localhost:3000</span></div>
-          <div class="flex justify-between gap-4"><span>your.workspace</span><span style="color: var(--text);">waiting</span></div>
+          <p>Ideas organizadas. Un cuaderno para cada tema.</p>
+          <a href="/notebooks.html?preview=1" class="block underline" style="color: var(--accent);">Explorar cuadernos de ejemplo →</a>
         </div>
       </div>
     </section>
@@ -238,127 +241,6 @@
     </section>
   </main>
 
-  <script>
-    const signInTab = document.getElementById('signInTab');
-    const signUpTab = document.getElementById('signUpTab');
-    const signInForm = document.getElementById('signInForm');
-    const signUpForm = document.getElementById('signUpForm');
-    const authTitle = document.getElementById('authTitle');
-    const authDescription = document.getElementById('authDescription');
-    const authFeedback = document.getElementById('authFeedback');
-    const connectionStatus = document.getElementById('connectionStatus');
-
-    function setMode(mode) {
-      const isSignIn = mode === 'sign-in';
-
-      signInForm.classList.toggle('hidden', !isSignIn);
-      signUpForm.classList.toggle('hidden', isSignIn);
-      signInTab.classList.toggle('tab-active', isSignIn);
-      signUpTab.classList.toggle('tab-active', !isSignIn);
-      signInTab.setAttribute('aria-selected', String(isSignIn));
-      signUpTab.setAttribute('aria-selected', String(!isSignIn));
-      signInTab.style.color = isSignIn ? 'var(--text)' : 'var(--text-dim)';
-      signUpTab.style.color = isSignIn ? 'var(--text-dim)' : 'var(--text)';
-      authTitle.textContent = isSignIn ? 'Iniciar sesión' : 'Crear cuenta';
-      authDescription.textContent = isSignIn
-        ? 'Ingresá con tu cuenta para abrir tu sesión de chat.'
-        : 'Creá tu identidad para guardar tu acceso al espacio de chat.';
-      authFeedback.textContent = '';
-      authFeedback.classList.remove('is-error');
-      authFeedback.classList.add('is-info');
-    }
-
-    signInTab.addEventListener('click', () => setMode('sign-in'));
-    signUpTab.addEventListener('click', () => setMode('sign-up'));
-
-    function setBusy(isBusy) {
-      signInForm.querySelector('button[type="submit"]').disabled = isBusy;
-      signUpForm.querySelector('button[type="submit"]').disabled = isBusy;
-      connectionStatus.textContent = isBusy ? 'working...' : 'standby';
-      connectionStatus.style.color = isBusy ? 'var(--accent)' : 'var(--text-dim)';
-    }
-
-    function showFeedback(message, type = 'info') {
-      authFeedback.classList.remove('is-error', 'is-info');
-      // Fuerza el reinicio de la animación si se repite el mismo error.
-      void authFeedback.offsetWidth;
-      authFeedback.textContent = message;
-      authFeedback.classList.add(type === 'error' ? 'is-error' : 'is-info');
-    }
-
-    async function requestAuth(path, body) {
-      const response = await fetch(`/api/auth/${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify(body)
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const message = payload?.message || payload?.error?.message || payload?.error || `HTTP ${response.status}`;
-        throw new Error(message);
-      }
-
-      return payload;
-    }
-
-    async function handleSignIn(event) {
-      event.preventDefault();
-      if (!signInForm.reportValidity()) return;
-
-      setBusy(true);
-      showFeedback('// validando credenciales...');
-
-      try {
-        await requestAuth('sign-in/email', {
-          email: document.getElementById('signInEmail').value.trim(),
-          password: document.getElementById('signInPassword').value,
-          rememberMe: signInForm.elements.remember.checked
-        });
-        showFeedback('// sesión iniciada · redirigiendo...');
-        window.location.assign('/index.html');
-      } catch (error) {
-        showFeedback(`// no se pudo iniciar sesión: ${error.message}`, 'error');
-        setBusy(false);
-      }
-    }
-
-    async function handleSignUp(event) {
-      event.preventDefault();
-      if (!signUpForm.reportValidity()) return;
-
-      setBusy(true);
-      showFeedback('// creando identidad...');
-
-      try {
-        await requestAuth('sign-up/email', {
-          name: document.getElementById('signUpName').value.trim(),
-          email: document.getElementById('signUpEmail').value.trim(),
-          password: document.getElementById('signUpPassword').value
-        });
-        showFeedback('// cuenta creada · redirigiendo...');
-        window.location.assign('/index.html');
-      } catch (error) {
-        showFeedback(`// no se pudo crear la cuenta: ${error.message}`, 'error');
-        setBusy(false);
-      }
-    }
-
-    signInForm.addEventListener('submit', handleSignIn);
-    signUpForm.addEventListener('submit', handleSignUp);
-    document.getElementById('forgotPassword').addEventListener('click', () => {
-      showFeedback('// recuperación de contraseña pendiente de implementar');
-    });
-
-    // Si ya existe una sesión, no mostramos el formulario innecesariamente.
-    fetch('/api/me', { credentials: 'same-origin' })
-      .then((response) => {
-        if (response.ok) window.location.replace('/index.html');
-      })
-      .catch(() => {
-        // La página puede abrirse como archivo local; la conexión se validará al enviar.
-      });
-  </script>
+  <script type="module" src="/assets/auth.js"></script>
 </body>
 </html>

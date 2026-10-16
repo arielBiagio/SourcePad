@@ -6,8 +6,9 @@
 <title>terminal://chat</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+<link rel="stylesheet" href="/assets/tailwind.css">
+<script src="/assets/marked.umd.js"></script>
+<script src="/assets/purify.min.js"></script>
 <style>
   :root{
     --bg: #0B0E14;
@@ -127,10 +128,11 @@
         </div>
         <div>
           <p class="text-sm font-semibold tracking-tight" style="color: var(--text);">sesión activa</p>
-          <p class="mono text-[11px]" style="color: var(--text-dim);" id="statusText">localhost:3000/api/chat</p>
+          <p class="mono text-[11px]" style="color: var(--text-dim);" id="statusText">/api/chat</p>
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <a href="/notebooks.html" class="mono text-[11px] px-2 py-1.5" style="color: var(--accent);">cuadernos</a>
         <span id="userName" class="mono text-[10px] max-w-28 truncate hidden sm:inline" style="color: var(--text-dim);"></span>
         <button id="logoutBtn" class="mono text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors hover:opacity-100" style="border-color: var(--border); color: var(--text-dim);" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-dim)'">
           salir
@@ -193,7 +195,9 @@
   </div>
 
 <script>
-  const API_URL = 'http://localhost:3000/api/chat';
+  // URL relativa: evita CORS y usa el mismo origen que sirve este frontend.
+  const API_URL = '/api/chat';
+  const API_LABEL = `${window.location.host}/api/chat`;
 
   // Memoria de la conversación (Sliding Window) — el backend espera este historial completo en cada request
   let historialDeMensajes = [];
@@ -332,7 +336,7 @@
     } else {
       statusDot.style.background = 'var(--ok)';
       statusPing.style.background = 'var(--ok)';
-      statusText.textContent = 'localhost:3000/api/chat';
+      statusText.textContent = API_LABEL;
     }
   }
 
@@ -381,7 +385,7 @@
           textoPintado += siguienteCaracter;
 
           // Re-parseamos el Markdown acumulado hasta ahora y lo pintamos como HTML real
-          bubbleActiva.innerHTML = marked.parse(textoPintado);
+          bubbleActiva.innerHTML = DOMPurify.sanitize(marked.parse(textoPintado));
           scrollToBottom();
         } else if (streamFinalizado) {
           // ya no quedan letras por pintar y el backend terminó de mandar el stream: cerramos todo
@@ -422,7 +426,7 @@
         removeLoadingBubble();
       } else {
         // mostramos de una todo lo que alcanzamos a recibir, sin esperar a que el typewriter lo termine de revelar
-        bubbleActiva.innerHTML = marked.parse(respuestaDeLaIA);
+        bubbleActiva.innerHTML = DOMPurify.sanitize(marked.parse(respuestaDeLaIA));
       }
 
       // Guardamos en la memoria solo lo que realmente se generó (si hubo algo)
@@ -450,7 +454,9 @@
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+        if (res.status === 401) window.location.replace('/auth.html');
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `HTTP ${res.status}`);
       }
 
       const reader = res.body.getReader();
@@ -521,12 +527,15 @@
     logoutBtn.disabled = true;
 
     try {
-      await fetch('/api/auth/sign-out', {
+      const response = await fetch('/api/auth/sign-out', {
         method: 'POST',
         credentials: 'same-origin'
       });
-    } finally {
+      if (!response.ok) throw new Error('No se pudo cerrar la sesión.');
       window.location.replace('/auth.html');
+    } catch (error) {
+      statusText.textContent = error.message;
+      logoutBtn.disabled = false;
     }
   });
 
