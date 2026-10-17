@@ -4,13 +4,13 @@ Aplicación web de chat con inteligencia artificial y cuadernos documentales. Pe
 
 ## Funcionalidades
 
-- **Chat general:** respuestas por streaming, presentación Markdown y contexto reciente de la conversación.
+- **Chat general:** respuestas por streaming con renderizado agrupado, presentación Markdown y envío de hasta seis mensajes recientes, con control del tamaño de la petición.
 - **Autenticación:** registro, acceso y confirmación de correo con Supabase Auth; sesiones administradas en el servidor mediante cookies HttpOnly.
 - **Cuadernos:** creación, edición, búsqueda y eliminación de espacios independientes por tema.
 - **Fuentes documentales:** carga privada de PDF, TXT y Markdown, hasta 10 MiB por archivo; vista previa, descarga y eliminación.
 - **Procesamiento local:** extracción de texto, fragmentación y conservación de la página de origen en los PDF.
 - **Indexación semántica:** embeddings BGE-M3 por lotes, con progreso, pausa entre lotes y reanudación.
-- **Preguntas con fuentes:** recuperación sobre todas las fuentes indexadas del cuaderno y respuestas con citas y extractos verificables.
+- **Preguntas con fuentes:** recuperación sobre todas las fuentes indexadas del cuaderno y streaming por bloques, con referencias comprobadas y vistas previas obtenidas del texto original.
 - **Historial por cuaderno:** preguntas y respuestas persistentes, con opción de borrar la conversación sin eliminar los documentos.
 - **Interfaz adaptable:** fuentes, chat y cuadernos en tres columnas; navegación por pestañas en móvil, modales de citas y detalles desplegables.
 - **Escritura compacta:** campo que crece con el texto; Enter envía y Shift + Enter inserta una línea. El modelo puede usar listas cuando mejoran la claridad.
@@ -72,6 +72,10 @@ Sin un proyecto Supabase configurado, el modo `supabase` informa la configuraci�
 4. Escribir una pregunta: la aplicación consulta las fuentes indexadas del cuaderno activo.
 5. Abrir las citas numeradas para revisar la procedencia y, opcionalmente, el fragmento completo.
 
+Los bloques aparecen a medida que termina su generación y se validan sus referencias. El modelo resume y elige los fragmentos; el servidor obtiene su texto original y metadatos, sin exigirle al modelo transcribir citas. El historial sólo se guarda después de completar y validar la respuesta entera. Si se cancela o falla la generación, los bloques ya recibidos quedan marcados como respuesta incompleta; no se guarda una respuesta parcial ni hay reintentos automáticos. Si la conexión se pierde durante el guardado final, conviene recargar el historial antes de repetir la consulta: una respuesta completa podría haberse guardado aunque no llegara su confirmación.
+
+Las respuestas documentales solicitan un esquema JSON con identificadores de fragmentos obligatorios. Cada referencia abre una vista previa del inicio del fragmento (hasta 300 caracteres), con el contexto completo desplegable; no es un pasaje elegido automáticamente que demuestre cada afirmación. Las referencias no garantizan que el resumen interprete correctamente el documento. Se pide responder lo que esté respaldado, aclarar las limitaciones si la información es parcial y avisar cuando no alcance para responder. Los errores técnicos se distinguen de la falta de información, sin registrar texto de documentos ni claves. Las citas del historial anterior siguen disponibles; este cambio no requiere migraciones ni reindexación.
+
 ## Privacidad y seguridad
 
 - Las claves se configuran exclusivamente en el entorno del servidor; no se entregan al navegador.
@@ -103,3 +107,7 @@ Las suites cubren autenticación, aislamiento entre usuarios, migraciones/RLS, d
 - Antes de un despliegue público se deben configurar HTTPS, correo/SMTP, políticas de acceso, aislamiento del procesamiento de archivos, límites de recursos y controles de gasto. Publicar el código no implica que el servicio esté preparado para producción.
 
 La [guía técnica de Supabase](docs/supabase-setup.md) detalla la configuración, las migraciones, el contrato HTTP y los límites del procesamiento.
+
+## Organización del código
+
+El frontend utiliza módulos JavaScript nativos: `general-chat.js` para el chat general; `notebooks.js` para coordinar el workspace; `source-list.js`, `source-viewer.js` y `chat-view.js` para sus vistas. El transporte HTTP se comparte en `http.js` y los límites públicos en `contracts.js`. El backend conserva la validación independiente de cada petición y comparte la búsqueda documental mediante `document-access.js`, sin retirar los filtros de propietario/cuaderno ni las políticas RLS.
