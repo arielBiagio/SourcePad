@@ -39,7 +39,7 @@ beforeEach(async () => {
   generations = [];
   generate = async messages => {
     const source = JSON.parse(messages[1].content).untrustedSources[0];
-    return JSON.stringify({ insufficientEvidence: false,segments: [{ text: 'Respuesta basada en la fuente.',citations: [{ sourceId: source.id,quote: source.text.slice(0,100) }] }] });
+    return JSON.stringify({ insufficientEvidence: false,segments: [{ text: 'Respuesta basada en la fuente.',citations: [{ sourceId: source.id }] }] });
   };
   const account = async () => {
     const r = await request('/api/auth/sign-up/email',null,'POST',{ name: 'QA',email: randomUUID()+'@example.test',password: 'Testing123!' });
@@ -159,7 +159,7 @@ test('RAG API: anónimo, cuenta ajena y validación no consumen IA; cuaderno vac
 
 test('RAG API: una cita inventada se rechaza sin devolver el texto; 429 no cierra la sesión',async () => {
   await index(await source());
-  generate = async () => JSON.stringify({ insufficientEvidence: false,segments: [{ text: 'Texto que no debe mostrarse',citations: [{ sourceId: 'F99',quote: 'Cita inventada y privada' }] }] });
+  generate = async () => JSON.stringify({ insufficientEvidence: false,segments: [{ text: 'Texto que no debe mostrarse',citations: [{ sourceId: 'F99' }] }] });
   const invalid = await answer(); assert.equal(invalid.status,502); assert.equal((await invalid.json()).code,'RAG_INVALID_RESPONSE');
   generate = async () => { throw new HttpError(429,'Proveedor ocupado.','CHAT_RATE_LIMIT'); };
   const limited = await answer(); assert.equal(limited.status,429); assert.equal((await limited.json()).code,'CHAT_RATE_LIMIT');
@@ -214,4 +214,13 @@ test('historial API: requiere confirmación para borrar y no permite borrar otro
   assert.equal((await request(root()+'/conversation',a,'DELETE',{ confirm: true })).status,204);
   assert.equal((await (await request(root()+'/conversation')).json()).turns.length,0);
   assert.equal(fake.documents.size > 0,true);
+});
+
+test('RAG NDJSON mantiene autenticación, aislamiento y abstención sin costo',async()=>{
+  const send=cookie=>fetch(base+root()+'/answer',{method:'POST',headers:{origin:'http://localhost:3000','Content-Type':'application/json',Accept:'application/x-ndjson',...(cookie?{cookie}:{})},body:JSON.stringify({query:'Consulta',confirmExternalProcessing:true})});
+  assert.equal((await send(null)).status,401);assert.equal((await send(b)).status,404);
+  const response=await send(a);assert.equal(response.status,200);
+  const events=(await response.text()).trim().split('\n').map(JSON.parse);
+  assert.equal(events.length,1);assert.equal(events[0].type,'done');assert.equal(events[0].result.insufficientEvidence,true);
+  assert.equal(calls.length,0);assert.equal(generations.length,0);
 });

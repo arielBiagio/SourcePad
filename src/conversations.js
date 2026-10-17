@@ -45,13 +45,15 @@ export function mountConversations(app,repository) {
 
 export function withConversationHistory(rag,history) {
   return {
-    async answer(req,res,signal) {
-      const result = await rag.answer(req,res,signal);
+    async answer(req,res,signal,onBlock) {
+      const result = await rag.answer(req,res,signal,onBlock);
       signal?.throwIfAborted();
       try {
         const turn = await history.save(req,res,result);
+        signal?.throwIfAborted();
         return { ...result,saved: true,turnId: turn.id,createdAt: turn.created_at };
       } catch {
+        signal?.throwIfAborted();
         // No se transforma un fallo posterior al cobro en una invitación a regenerar.
         return { ...result,saved: false,historyWarning: 'La respuesta se generó, pero no se guardó. No la regeneres para intentar guardarla: revisá la conexión o aplicá la migración 005.' };
       }

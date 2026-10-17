@@ -4,6 +4,7 @@ import { safeDocument, checkDocumentError as check } from '../documents.js';
 import { HttpError, asyncRoute } from '../errors.js';
 import { runExtraction } from './runner.js';
 import { ProcessingError, LIMITS } from './extract.js';
+import {findDocument} from '../document-access.js';
 
 const messages = {
   NO_TEXT: 'No se encontró texto seleccionable. Si es un escaneo, necesita OCR (todavía no disponible).',
@@ -15,13 +16,7 @@ const messages = {
 };
 
 export function createProcessingRepository(getClient, extract = runExtraction) {
-  async function find(req, res) {
-    const { data, error } = await getClient(req, res).from('documents').select('*')
-      .eq('id', req.params.documentId).eq('notebook_id', req.params.notebookId).eq('owner_id', req.user.id).maybeSingle();
-    check(error);
-    if (!data || ['deleted', 'deleting'].includes(data.status)) throw new HttpError(404, 'Fuente no encontrada.');
-    return data;
-  }
+  const find=(req,res)=>findDocument(getClient(req,res),req);
   return {
     async process(req, res) {
       const document = await find(req, res);

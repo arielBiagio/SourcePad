@@ -1,3 +1,9 @@
+import { readAnswerResponse } from './answer-stream.js?v=20261016-cleanup';
+import {createHttpClient} from './http.js';
+import {createSourceViewer} from './source-viewer.js';
+import {createChatView} from './chat-view.js';
+import {createSourceList} from './source-list.js';
+
 const $ = id => document.getElementById(id);
 const preview = new URLSearchParams(location.search).get('preview') === '1';
 let notebooks = [];
@@ -9,15 +15,10 @@ let sourcesBusy = false;
 let sourceVersion = 0;
 let pendingDelete = null;
 let maxUploadBytes = 10485760;
-let textSource = null;
-let nextChunkOffset = null;
 let embeddingsConfigured = false;
 let pendingIndexSource = null;
 let stopIndexRequested = false;
 let answerController = null;
-let viewerController = null;
-let originalURL = null;
-let viewerVersion = 0;
 let turns = [];
 let historyLoading = false;
 let conversationVersion = 0;
@@ -25,6 +26,16 @@ const localTurns = new Map();
 const previewSources = new Map();
 const previewFiles = new Map();
 const expandedSources = new Set();
+
+const http=createHttpClient({onUnauthorized:()=>location.replace('/auth.html')});
+const api=http.json;
+const {downloadSource,openSource,showSourceText,closeSourceText}=createSourceViewer({$,api,http,preview,previewFiles,getNotebook:()=>selected,isBusy:()=>sourcesBusy,lockSources,sourceFeedback});
+const {clearAnswer,clearStreaming,followingChat,populateAnswer,validTurn,renderConversation}=createChatView({$,closeSourceText,getTurns:()=>turns});
+
+const {renderSources}=createSourceList({$,getSources:()=>sources,isConfigured:()=>embeddingsConfigured,expandedSources,openSource,processSource,showSourceText,downloadSource,
+  onIndex:source=>{pendingIndexSource=source;$('indexSourceMessage').textContent='Fuente: “'+source.filename+'”. Fragmentos pendientes: '+(source.chunk_count-(source.indexed_chunk_count||0))+'.';$('indexSourcePrompt').showModal();$('confirmIndexing').focus();},
+  onRemove:source=>{pendingDelete=source;$('deleteSourceMessage').textContent='¿Eliminar la fuente “'+source.filename+'”? El archivo dejará de estar disponible.';$('deleteSourcePrompt').showModal();$('confirmSourceDelete').focus();},
+});
 
 function resizeQuery() {
   const input = $('semanticQuery');
@@ -52,17 +63,6 @@ new ResizeObserver(entries => {
   const width = entries[0].contentRect.width;
   if (width && width !== queryWidth) { queryWidth = width; resizeQuery(); }
 }).observe($('semanticQuery'));
-
-async function api(path, options = {}) {
-  const response = await fetch(path, {
-    ...options, credentials: 'same-origin', signal: options.signal || AbortSignal.timeout(15000),
-    headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
-  });
-  if (response.status === 401) { location.replace('/auth.html'); throw new Error('Tu sesión finalizó.'); }
-  const data = response.status === 204 ? null : await response.json();
-  if (!response.ok) throw new Error(data?.error || 'No se pudo completar la operación.');
-  return data;
-}
 
 function feedback(message = '', error = false) {
   $('feedback').textContent = message;
@@ -129,6 +129,7 @@ function openDetail(notebook) {
   pendingIndexSource = null; $('indexSourcePrompt').close();
   $('semanticQuery').value = '';
   expandedSources.clear();
+  clearStreaming();
   turns = []; clearAnswer(); $('conversationHistory').replaceChildren(); $('chatEmpty').hidden = false;
   showPanel('chat'); renderWorkspaceNotebooks(); loadConversation();
   loadSources();
@@ -266,87 +267,6 @@ function lockSources(value) {
   for (const button of $('sourceList').querySelectorAll('button')) button.disabled = value || button.dataset.needsEmbeddings === 'true' && !embeddingsConfigured;
   for (const button of $('workspaceNotebooks').querySelectorAll('button')) button.disabled = value;
 }
-const statusLabels = {
-  uploading: 'Subida interrumpida o en curso',
-  uploaded: 'Pendiente de procesamiento',
-  processing: 'Procesando',
-  extracted: 'Texto extraído',
-  ready: 'Indexado para búsqueda',
-  error: 'Error de subida',
-  deleting: 'Eliminación pendiente',
-};
-function renderSources() {
-  $('sourceCount').textContent = String(sources.length);
-  $('noSources').hidden = sources.length !== 0;
-  $('sourceList').replaceChildren();
-  for (const source of sources) {
-    const row = document.createElement('li'); row.className = 'source-row';
-    const extension = document.createElement('span'); extension.className = 'source-extension mono'; extension.textContent = source.extension.toUpperCase();
-    const info = document.createElement('div'); info.className = 'source-info';
-    const name = document.createElement('button'); name.type = 'button'; name.className = 'source-open'; name.textContent = source.filename;
-    name.setAttribute('aria-label','Abrir fuente ' + source.filename); name.addEventListener('click',() => openSource(source));
-    const details = document.createElement('details'); details.className = 'source-details'; details.open = expandedSources.has(source.id);
-    const summary = document.createElement('summary'); summary.textContent = 'Detalles y opciones'; details.append(summary);
-    details.addEventListener('toggle',() => { if (details.open) expandedSources.add(source.id); else expandedSources.delete(source.id); });
-    const meta = document.createElement('p'); meta.className = 'source-meta';
-    const status = document.createElement('span'); status.className = 'source-status' + (['error', 'deleting'].includes(source.status) ? ' error' : '');
-    status.textContent = source.status === 'error' && source.processing_version ? 'Error de procesamiento' : statusLabels[source.status] || 'Estado pendiente';
-    meta.append(status, document.createTextNode(' · ' + Math.max(1, Math.round(source.byte_size / 1024)) + ' KiB'));
-    if (source.chunk_count) meta.append(document.createTextNode(' · ' + source.chunk_count + ' fragmento(s)' + (source.page_count ? ' · ' + source.page_count + ' página(s)' : '')));
-    if (source.index_status && !['not_indexed','indexed'].includes(source.index_status)) {
-      meta.append(document.createTextNode(' · Índice: ' + (source.indexed_chunk_count || 0) + '/' + source.chunk_count + (source.index_status === 'error' ? ' · Interrumpido' : '')));
-    }
-    info.append(name, details); details.append(meta);
-    if (source.empty_page_count) {
-      const warning = document.createElement('p'); warning.className = 'source-warning';
-      warning.textContent = source.empty_page_count + ' página(s) sin texto seleccionable. No se aplicó OCR.'; details.append(warning);
-    }
-    if (source.error_message) {
-      const error = document.createElement('p'); error.className = 'source-error'; error.textContent = source.error_message; details.append(error);
-    }
-    if (source.embedding_error) {
-      const error = document.createElement('p'); error.className = 'source-error'; error.textContent = source.embedding_error; details.append(error);
-    }
-    const actions = document.createElement('div'); actions.className = 'source-actions';
-    if (['uploaded', 'processing'].includes(source.status) || (source.status === 'error' && source.processing_version)) {
-      const process = document.createElement('button'); process.type = 'button'; process.className = 'primary';
-      process.textContent = source.status === 'uploaded' ? 'Procesar' : 'Reintentar';
-      process.setAttribute('aria-label', 'Procesar ' + source.filename);
-      process.addEventListener('click', () => processSource(source)); actions.append(process);
-    }
-    if (['extracted', 'ready'].includes(source.status)) {
-      const view = document.createElement('button'); view.type = 'button'; view.className = 'primary'; view.textContent = 'Ver texto';
-      view.setAttribute('aria-label', 'Ver texto de ' + source.filename);
-      view.addEventListener('click', () => showSourceText(source)); actions.append(view);
-      if (source.index_status !== 'indexed') {
-        const index = document.createElement('button'); index.type = 'button'; index.className = 'primary';
-        index.textContent = source.indexed_chunk_count ? 'Continuar índice' : 'Indexar';
-        index.setAttribute('aria-label', 'Indexar ' + source.filename); index.dataset.needsEmbeddings = 'true';
-        index.disabled = !embeddingsConfigured; index.title = embeddingsConfigured ? 'Envía texto a OpenRouter y consume saldo.' : 'Falta configurar OpenRouter.';
-        index.addEventListener('click', () => {
-          pendingIndexSource = source;
-          $('indexSourceMessage').textContent = 'Fuente: “' + source.filename + '”. Fragmentos pendientes: ' + (source.chunk_count - (source.indexed_chunk_count || 0)) + '.';
-          $('indexSourcePrompt').showModal(); $('confirmIndexing').focus();
-        }); actions.append(index);
-      }
-    }
-    if (!['uploading', 'deleting', 'error'].includes(source.status)) {
-      const download = document.createElement('button'); download.type = 'button'; download.className = 'quiet'; download.textContent = 'Descargar';
-      download.setAttribute('aria-label', 'Descargar ' + source.filename);
-      download.addEventListener('click', () => downloadSource(source)); actions.append(download);
-    }
-    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'source-remove';
-    remove.textContent = '×'; remove.title = 'Quitar fuente';
-    remove.setAttribute('aria-label', 'Eliminar ' + source.filename);
-    remove.addEventListener('click', () => {
-      pendingDelete = source;
-      $('deleteSourceMessage').textContent = '¿Eliminar la fuente “' + source.filename + '”? El archivo dejará de estar disponible.';
-      $('deleteSourcePrompt').showModal();
-      $('confirmSourceDelete').focus();
-    });
-    details.append(actions); row.append(extension, info, remove); $('sourceList').append(row);
-  }
-}
 async function loadSources() {
   closeSourceText();
   $('searchFeedback').textContent = '';
@@ -415,65 +335,6 @@ $('uploadForm').addEventListener('submit', async event => {
   lockSources(false);
   if (!lastError) { $('uploadDialog').close(); showPanel('sources'); }
 });
-async function downloadSource(source) {
-  if (sourcesBusy) return;
-  lockSources(true);
-  try {
-    let blob = previewFiles.get(source.id);
-    if (!preview) {
-      const response = await fetch('/api/notebooks/' + selected.id + '/documents/' + source.id + '/download', { credentials: 'same-origin', signal: AbortSignal.timeout(60000) });
-      if (response.status === 401) { location.replace('/auth.html'); return; }
-      if (!response.ok) throw new Error((await response.json()).error || 'No se pudo descargar la fuente.');
-      blob = await response.blob();
-    }
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url; link.download = source.filename; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch (error) { sourceFeedback(error.message, true); }
-  finally { lockSources(false); }
-}
-
-function openSource(source) {
-  if (sourcesBusy) return;
-  if (['extracted','ready'].includes(source.status)) return showSourceText(source);
-  closeSourceText(); textSource = source; $('sourceTextTitle').textContent = source.filename; $('sourceTextPanel').showModal(); showOriginalSource();
-}
-$('showOriginal').addEventListener('click',showOriginalSource);
-$('showExtracted').addEventListener('click',() => {
-  if (!textSource) return;
-  if (!['extracted','ready'].includes(textSource.status)) { $('sourceViewerFeedback').textContent = 'Procesá la fuente para ver el texto extraído.'; return; }
-  showSourceText(textSource);
-});
-async function showOriginalSource() {
-  if (!textSource || !selected) return;
-  viewerController?.abort(); viewerController = new AbortController();
-  const version = ++viewerVersion; const source = textSource; const bookId = selected.id;
-  if (originalURL) URL.revokeObjectURL(originalURL); originalURL = null;
-  $('sourceTextChunks').hidden = true; $('moreSourceText').hidden = true;
-  $('originalPreview').hidden = false; $('originalPreview').replaceChildren(); $('sourceViewerFeedback').textContent = 'Abriendo original privado…';
-  try {
-    let blob = previewFiles.get(source.id);
-    if (!preview) {
-      const response = await fetch('/api/notebooks/'+bookId+'/documents/'+source.id+'/download',{ credentials: 'same-origin',signal: AbortSignal.any([viewerController.signal,AbortSignal.timeout(60000)]) });
-      if (response.status === 401) { location.replace('/auth.html'); return; }
-      if (!response.ok) throw new Error('No se pudo abrir el original de esta fuente.');
-      blob = await response.blob();
-    }
-    if (!blob) throw new Error('El archivo ya no está disponible en esta vista.');
-    if (version !== viewerVersion || selected?.id !== bookId) return;
-    if (source.extension === 'pdf') {
-      originalURL = URL.createObjectURL(new Blob([blob],{ type: 'application/pdf' }));
-      const frame = document.createElement('iframe'); frame.title = 'Vista previa de '+source.filename; frame.src = originalURL;
-      $('originalPreview').append(frame);
-    } else {
-      const text = await blob.text(); if (version !== viewerVersion) return;
-      const pre = document.createElement('pre'); pre.textContent = text.slice(0,100000); $('originalPreview').append(pre);
-      if (text.length > 100000) $('sourceViewerFeedback').textContent = 'Vista previa limitada a 100.000 caracteres. Descargá el archivo para leerlo completo.';
-    }
-    if (version === viewerVersion && !$('sourceViewerFeedback').textContent.startsWith('Vista previa limitada')) $('sourceViewerFeedback').textContent = '';
-  } catch (error) { if (version === viewerVersion && error.name !== 'AbortError') $('sourceViewerFeedback').textContent = error.message; }
-}
-
 async function processSource(source) {
   if (sourcesBusy) return;
   if (preview) { sourceFeedback('El procesamiento requiere una cuenta conectada. Esta vista de ejemplo no envía archivos al servidor.'); return; }
@@ -487,47 +348,6 @@ async function processSource(source) {
     await loadSources(); sourceFeedback(error.name === 'TimeoutError' ? 'La conexión tardó demasiado. Actualizá el estado antes de reintentar.' : error.message, true);
   } finally { lockSources(false); }
 }
-function closeSourceText() {
-  viewerVersion++; viewerController?.abort(); viewerController = null;
-  if (originalURL) URL.revokeObjectURL(originalURL); originalURL = null;
-  $('sourceTextPanel').close(); $('sourceTextChunks').replaceChildren(); $('originalPreview').replaceChildren();
-  $('moreSourceText').hidden = true; textSource = null; nextChunkOffset = null;
-  $('citationQuote').hidden = true; $('citationQuote').textContent = '';
-  $('citationMeta').hidden = true; $('citationMeta').textContent = '';
-  document.querySelector('.viewer-tabs').hidden = false;
-  $('viewerNote').textContent = 'El texto extraído conserva la página original; tablas y columnas pueden requerir revisión.';
-}
-$('closeSourceText').addEventListener('click', closeSourceText);
-$('moreSourceText').addEventListener('click', () => showSourceText(textSource, true));
-async function showSourceText(source, append = false) {
-  if (sourcesBusy || !source) return;
-  const offset = append ? nextChunkOffset : 0;
-  if (offset === null) return;
-  if (!append) { closeSourceText(); $('sourceTextPanel').showModal(); }
-  textSource = source; $('originalPreview').hidden = true; $('sourceTextChunks').hidden = false;
-  const version = viewerVersion; const notebookId = selected.id;
-  $('sourceTextTitle').textContent = source.filename;
-  $('sourceViewerFeedback').textContent = 'Cargando texto…'; $('moreSourceText').disabled = true;
-  try {
-    const result = await api('/api/notebooks/' + selected.id + '/documents/' + source.id + '/chunks?offset=' + offset);
-    if (version !== viewerVersion || selected?.id !== notebookId) return;
-    for (const chunk of result.chunks) {
-      const article = document.createElement('article'); article.className = 'text-chunk';
-      const heading = document.createElement('h4');
-      heading.textContent = (chunk.page_number ? 'Página ' + chunk.page_number + ' · ' : '') + 'Fragmento ' + (chunk.position + 1);
-      const text = document.createElement('pre'); text.textContent = chunk.content;
-      article.append(heading, text); $('sourceTextChunks').append(article);
-    }
-    nextChunkOffset = result.nextOffset;
-    $('moreSourceText').hidden = nextChunkOffset === null;
-    $('sourceViewerFeedback').textContent = '';
-    if (!append) {
-      $('sourceTextTitle').tabIndex = -1; $('sourceTextTitle').focus({ preventScroll: true });
-    }
-  } catch (error) { if (version === viewerVersion) $('sourceViewerFeedback').textContent = error.message; }
-  finally { if (version === viewerVersion) $('moreSourceText').disabled = false; }
-}
-
 $('cancelIndexing').addEventListener('click',() => { pendingIndexSource = null; $('indexSourcePrompt').close(); });
 $('stopIndexing').addEventListener('click',() => { stopIndexRequested = true; $('stopIndexing').disabled = true; });
 $('confirmIndexing').addEventListener('click',async () => {
@@ -551,64 +371,6 @@ $('confirmIndexing').addEventListener('click',async () => {
   } catch (error) { await loadSources(); sourceFeedback(error.name === 'TimeoutError' ? 'La conexión se interrumpió. Actualizá el estado antes de reintentar.' : error.message,true); }
   finally { $('stopIndexing').hidden = true; lockSources(false); }
 });
-function clearAnswer() {
-  $('ragAnswer').hidden = true; $('ragAnswerText').replaceChildren();
-  $('latestQuestion').hidden = true; $('latestQuestion').textContent = '';
-}
-function openCitation(result,citation) {
-  const source = result.sources.find(s => s.id === citation.sourceId);
-  if (!source) return;
-  closeSourceText();
-  $('sourceTextTitle').textContent = source.filename;
-  $('sourceViewerFeedback').textContent = '';
-  $('citationMeta').textContent = '[' + source.id + ']' + (source.page_number ? ' · Página ' + source.page_number : '') + ' · Fragmento ' + (source.position + 1);
-  $('citationMeta').hidden = false; $('citationQuote').textContent = citation.quote; $('citationQuote').hidden = false;
-  document.querySelector('.viewer-tabs').hidden = true; $('originalPreview').hidden = true; $('sourceTextChunks').hidden = false;
-  const article = document.createElement('details'); article.className = 'text-chunk citation-context';
-  const label = document.createElement('summary'); label.textContent = 'Ver fragmento completo';
-  const text = document.createElement('pre'); text.textContent = source.content; article.append(label,text); $('sourceTextChunks').append(article);
-  $('viewerNote').textContent = 'Extracto conservado con esta respuesta. La cita comprueba procedencia, no garantiza toda la interpretación.';
-  $('sourceTextPanel').showModal();
-}
-function populateAnswer(result,textHost) {
-  if (result.insufficientEvidence) {
-    const p = document.createElement('p'); p.className = 'rag-paragraph'; p.textContent = result.message; textHost.append(p);
-  }
-  for (const segment of result.segments) {
-    const p = document.createElement('p'); p.className = 'rag-paragraph'; p.textContent = segment.text;
-    for (const citation of segment.citations) {
-      const button = document.createElement('button'); button.type = 'button'; button.className = 'rag-citation'; button.textContent = citation.sourceId.replace(/^F/,'');
-      button.setAttribute('aria-label','Ver cita ' + citation.sourceId);
-      button.addEventListener('click',() => openCitation(result,citation)); p.append(button);
-    }
-    textHost.append(p);
-  }
-}
-function renderAnswer(result,focus = true) {
-  clearAnswer(); $('ragAnswer').hidden = false;
-  populateAnswer(result,$('ragAnswerText'));
-  if (focus) { $('ragAnswer').scrollIntoView({ block: 'nearest' }); $('ragAnswerTitle').focus({ preventScroll: true }); }
-}
-function validTurn(turn) {
-  const answer = turn?.answer;
-  return typeof turn?.question === 'string' && answer && Array.isArray(answer.segments) && Array.isArray(answer.sources)
-    && answer.sources.every(s => s && typeof s.id === 'string' && typeof s.content === 'string')
-    && answer.segments.every(s => s && typeof s.text === 'string' && Array.isArray(s.citations) && s.citations.every(c => c && answer.sources.some(source => source.id === c.sourceId) && typeof c.quote === 'string'));
-}
-function renderConversation() {
-  $('conversationHistory').replaceChildren(); clearAnswer(); $('chatEmpty').hidden = turns.length > 0;
-  for (const [index,turn] of turns.entries()) {
-    if (index === turns.length-1) {
-      renderAnswer(turn.answer,false); $('latestQuestion').textContent = turn.question; $('latestQuestion').hidden = false; continue;
-    }
-    const article = document.createElement('article'); article.className = 'chat-turn';
-    const question = document.createElement('p'); question.className = 'chat-question'; question.textContent = turn.question;
-    const answer = document.createElement('div'); answer.className = 'rag-answer';
-    answer.setAttribute('role','region'); answer.setAttribute('aria-label','Respuesta del asistente');
-    const text = document.createElement('div');
-    populateAnswer(turn.answer,text); answer.append(text); article.append(question,answer); $('conversationHistory').append(article);
-  }
-}
 async function loadConversation() {
   const version = ++conversationVersion, bookId = selected.id;
   historyLoading = true;
@@ -649,19 +411,37 @@ $('semanticSearchForm').addEventListener('submit',async event => {
   $('searchFeedback').classList.remove('error'); $('searchFeedback').textContent = 'Consultando tus fuentes…';
   answerController = new AbortController(); $('cancelAnswer').hidden = false;
   $('semanticSearchForm').setAttribute('aria-busy','true');
+  clearStreaming();
+  const follow=followingChat();
+  $('streamingQuestion').textContent=query;$('streamingTurn').hidden=false;$('chatEmpty').hidden=true;
+  $('streamingBlocks').setAttribute('aria-busy','true');$('streamingStatus').textContent='Buscando en tus fuentes…';
+  if(follow)$('chatScroll').scrollTop=$('chatScroll').scrollHeight;
+  let receivedBlocks=0;
   try {
-    const result = await api('/api/notebooks/' + selected.id + '/answer', {
-      method: 'POST', body: JSON.stringify({ query,confirmExternalProcessing: true }),
+    const response = await http.response('/api/notebooks/' + selected.id + '/answer', {
+      method: 'POST',headers:{Accept:'application/x-ndjson'},body: JSON.stringify({ query,confirmExternalProcessing: true }),
       signal: AbortSignal.any([answerController.signal,AbortSignal.timeout(100000)]),
     });
+    const result=await readAnswerResponse(response,event=>{
+      const follow=followingChat();receivedBlocks++;
+      populateAnswer({insufficientEvidence:false,segments:[event.segment],sources:event.sources},$('streamingBlocks'));
+      $('streamingStatus').textContent='Recibiendo bloques con referencias a tus fuentes…';$('searchFeedback').textContent='';
+      if(follow)$('chatScroll').scrollTop=$('chatScroll').scrollHeight;
+    });
+    const shouldFollow=followingChat(),scrollTop=$('chatScroll').scrollTop;
     const turn = { id: result.turnId || crypto.randomUUID(),question: query,answer: result };
     turns = [...turns,turn].slice(-30); localTurns.set(selected.id,[...turns]); renderConversation();
-    $('ragAnswer').scrollIntoView({ block: 'nearest' });
+    $('chatScroll').scrollTop=shouldFollow?$('chatScroll').scrollHeight:scrollTop;
     $('searchFeedback').textContent = result.insufficientEvidence ? 'No hay evidencia suficiente en los fragmentos consultados.' : '';
     if (result.saved === false) { $('historyFeedback').textContent = result.historyWarning; $('historyFeedback').classList.add('error'); }
     else if (!turns.some(t => t.answer.saved === false)) { $('historyFeedback').textContent = ''; $('historyFeedback').classList.remove('error'); }
     $('semanticQuery').value = ''; resizeQuery();
   } catch (error) {
+    if(receivedBlocks){
+      const rejected=['RAG_INVALID_RESPONSE','RAG_OUTPUT_TRUNCATED','RAG_OUTPUT_TOO_LARGE'].includes(error.code);
+      $('streamingStatus').textContent=rejected?'Respuesta incompleta · la generación fue rechazada y los bloques no se guardaron.':'Respuesta incompleta · guardado sin confirmar. Revisá el historial antes de repetirla.';
+      $('streamingStatus').classList.add('error');$('streamingBlocks').setAttribute('aria-busy','false');
+    }else clearStreaming();
     $('searchFeedback').textContent = error.name === 'AbortError' ? 'Respuesta cancelada. Las llamadas ya enviadas pueden generar un cargo; no se reintentó automáticamente.' : error.name === 'TimeoutError' ? 'La respuesta tardó demasiado. No se reintentó automáticamente.' : error.message;
     $('searchFeedback').classList.add('error');
   }

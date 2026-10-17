@@ -1,7 +1,7 @@
 import { HttpError, asyncRoute } from './errors.js';
+import {isUuid} from './validation.js';
 
 const fields = 'id,title,description,created_at,updated_at';
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateNotebook(body) {
   if (!body || typeof body.title !== 'string' || !body.title.trim() || body.title.trim().length > 120) {
@@ -55,7 +55,7 @@ export function mountNotebooks(app, requireAuth, repository, enabled) {
   app.post('/api/notebooks', asyncRoute(async (req, res) => {
     res.status(201).json({ notebook: await repository.create(req, res, validateNotebook(req.body)) });
   }));
-  app.param('notebookId', (req, res, next, id) => next(uuid.test(id) ? undefined : new HttpError(400, 'Identificador inválido.')));
+  app.param('notebookId', (req, res, next, id) => next(isUuid(id) ? undefined : new HttpError(400, 'Identificador inválido.')));
   app.patch('/api/notebooks/:notebookId', asyncRoute(async (req, res) => {
     res.json({ notebook: await repository.update(req, res, req.params.notebookId, validateNotebook(req.body)) });
   }));

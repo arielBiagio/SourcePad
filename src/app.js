@@ -11,6 +11,7 @@ import { createChatStream, validateHistory } from './chat.js';
 import { createRagRepository, mountRag } from './rag.js';
 import { createConversationRepository,mountConversations,withConversationHistory } from './conversations.js';
 import { HttpError, asyncRoute, errorHandler } from './errors.js';
+import { CHAT_LIMITS } from '../public/contracts.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -48,9 +49,9 @@ export async function createApp({ config, authAdapter, notebookRepository, docum
       };
     }
     auth.mount(app); // Better Auth lee el cuerpo crudo.
-    app.use(express.json({ limit: '128kb' }));
+    app.use(express.json({ limit: CHAT_LIMITS.requestBytes }));
   } else {
-    app.use(express.json({ limit: '128kb' }));
+    app.use(express.json({ limit: CHAT_LIMITS.requestBytes }));
     auth ||= createSupabaseAuth(config);
     auth.mount?.(app);
   }
@@ -89,6 +90,7 @@ export async function createApp({ config, authAdapter, notebookRepository, docum
       }
       res.end();
     } catch (error) {
+      if (controller.signal.aborted || res.destroyed) return;
       if (res.headersSent) res.destroy();
       else throw error instanceof HttpError ? error : new HttpError(502, 'La respuesta del modelo se interrumpió.');
     }

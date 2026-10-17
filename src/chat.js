@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { HttpError } from './errors.js';
 import { openRouterFailure } from './openrouter-errors.js';
+import { groundedResponseFormat } from './rag-contract.js';
+import { CHAT_LIMITS } from '../public/contracts.js';
 
 export function createChatStream(config, { transport } = {}) {
   let client;
@@ -11,7 +13,7 @@ export function createChatStream(config, { transport } = {}) {
       const pending = client.chat.completions.create({
         model: config.chatModel, messages, stream: true, max_tokens: 2048,
         ...(grounded ? {
-          response_format: { type: 'json_object' }, reasoning: { enabled: false },
+          response_format: groundedResponseFormat, reasoning: { enabled: false },
           provider: { data_collection: 'deny', require_parameters: true },
         } : {}),
       }, { signal });
@@ -41,11 +43,11 @@ export function createChatStream(config, { transport } = {}) {
 
 export function validateHistory(body) {
   const history = body?.historial;
-  if (!Array.isArray(history) || !history.length || history.length > 500) throw new HttpError(400, 'Historial inválido.');
+  if (!Array.isArray(history) || !history.length || history.length > CHAT_LIMITS.maxHistoryMessages) throw new HttpError(400, 'Historial inválido.');
   if (!history.every(item => item && ['user', 'assistant'].includes(item.role)
-    && typeof item.content === 'string' && item.content.trim() && item.content.length <= 16000)) {
+    && typeof item.content === 'string' && item.content.trim() && item.content.length <= CHAT_LIMITS.maxMessageChars)) {
     throw new HttpError(400, 'Los mensajes deben contener texto y un rol válido.');
   }
   if (history.at(-1).role !== 'user') throw new HttpError(400, 'La conversación debe terminar con una pregunta.');
-  return [{ role: 'system', content: 'Eres un asistente de IA integrado en una interfaz personalizada. Sé amigable y conciso.' }, ...history.slice(-6)];
+  return [{ role: 'system', content: 'Eres un asistente de IA integrado en una interfaz personalizada. Sé amigable y conciso.' }, ...history.slice(-CHAT_LIMITS.contextMessages)];
 }

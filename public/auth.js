@@ -1,3 +1,5 @@
+import {createHttpClient} from './http.js';
+const http=createHttpClient();
 const $ = id => document.getElementById(id);
 const signInForm = $('signInForm');
 const signUpForm = $('signUpForm');
@@ -31,13 +33,10 @@ function setMode(mode) {
   if (config?.ready) showFeedback('');
 }
 async function requestAuth(path, body) {
-  const response = await fetch(`/api/auth/${path}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+  return http.json(`/api/auth/${path}`, {
+    method: 'POST',
     body: JSON.stringify(body), signal: AbortSignal.timeout(15000),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.message || payload?.error?.message || payload?.error || 'Intentá nuevamente.');
-  return payload;
+  },{sessionRequired:false,errorMessage:'Intentá nuevamente.'});
 }
 async function submit(event, registration) {
   event.preventDefault();
@@ -70,15 +69,16 @@ signUpForm.addEventListener('submit', event => submit(event, true));
 $('forgotPassword').addEventListener('click', () => showFeedback('La recuperación de contraseña estará disponible en una próxima actualización.'));
 setBusy(false);
 try {
-  const response = await fetch('/api/config', { signal: AbortSignal.timeout(10000) });
-  if (!response.ok) throw new Error();
-  config = await response.json();
+  config = await http.json('/api/config', { signal: AbortSignal.timeout(10000) });
   setBusy(false);
   if (!config.ready) showFeedback('Tu espacio todavía no está conectado. Mientras tanto, podés explorar los cuadernos de ejemplo.');
   else {
-    const session = await fetch('/api/me', { credentials: 'same-origin', signal: AbortSignal.timeout(10000) });
-    if (session.ok) location.replace(config.home);
-    else if (session.status !== 401) showFeedback('No se pudo comprobar tu sesión. Intentá iniciar sesión nuevamente.', 'error');
+    try {
+      await http.json('/api/me',{signal:AbortSignal.timeout(10000)});
+      location.replace(config.home);
+    } catch(error) {
+      if(error.status!==401)showFeedback('No se pudo comprobar tu sesión. Intentá iniciar sesión nuevamente.', 'error');
+    }
   }
   const confirmation = new URLSearchParams(location.search).get('confirmation');
   if (confirmation === 'error' || confirmation === 'browser') {

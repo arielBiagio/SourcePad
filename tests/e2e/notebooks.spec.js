@@ -95,6 +95,53 @@ test('chat muestra límite del proveedor sin cerrar sesión y permite volver a e
   await expect(page.locator('#messages strong')).toHaveText('Respuesta de prueba');
 });
 
+test('chat general limita el contexto y agrupa el renderizado sin retraso por letra',async({page})=>{
+  await createSourceNotebook(page);
+  const bodies=[];
+  await page.route('**/api/chat',route=>{
+    bodies.push(route.request().postDataJSON());
+    return route.fulfill({contentType:'text/plain',body:'**Resumen** '+ 'Texto sintético 😎. '.repeat(600)});
+  });
+  await page.goto('/index.html');
+  await page.evaluate(()=>{const original=window.marked.parse;window.qaParseCalls=0;window.marked.parse=(...args)=>{window.qaParseCalls++;return original(...args);};});
+  for(let i=0;i<8;i++){
+    await page.locator('#userInput').fill('Consulta '+i+' '+ 'x'.repeat(2000));
+    await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+    await expect(page.locator('#userInput')).toBeEnabled();
+    await expect(page.locator('#messages strong')).toHaveCount(i+1);
+  }
+  expect(bodies).toHaveLength(8);
+  expect(bodies.every(body=>body.historial.length<=6&&Buffer.byteLength(JSON.stringify(body))<=120*1024)).toBe(true);
+  expect(bodies.at(-1).historial.at(-1).content).toContain('Consulta 7');
+  expect(await page.evaluate(()=>window.qaParseCalls)).toBeLessThanOrEqual(32);
+});
+
+test('chat general cancela antes y después del primer chunk sin duplicar respuestas ni reintentar',async({page})=>{
+  await createSourceNotebook(page);await page.goto('/index.html');const requests=[];
+  page.on('request',request=>{if(new URL(request.url()).pathname==='/api/chat')requests.push(request.postDataJSON());});
+  for(const suffix of ['BEFORE','AFTER']){
+    const query='QA_GENERAL_STREAM_'+suffix+'_'+randomUUID();
+    await page.locator('#userInput').fill(query);await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+    await expect.poll(async()=>(await(await page.request.get('/__test/stream-state',{params:{query}})).json()).waiting).toBe(true);
+    if(suffix==='AFTER')await expect(page.locator('#messages')).toContainText('Parte recibida 😎.');
+    await page.locator('#cancelBtn').click();await expect(page.locator('#userInput')).toBeEnabled();
+    await expect.poll(async()=>(await(await page.request.get('/__test/stream-state',{params:{query}})).json()).waiting).toBe(false);
+  }
+  await page.locator('#userInput').fill('Siguiente consulta');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await expect(page.locator('#messages strong')).toHaveText('Respuesta de prueba');
+  expect(requests).toHaveLength(3);
+  expect(requests[2].historial.filter(item=>item.role==='assistant')).toEqual([{role:'assistant',content:'Parte recibida 😎.'}]);
+  await expect(page.locator('#messages')).not.toContainText('Final.');
+});
+
+test('limpiar chat durante streaming cancela y no restaura mensajes antiguos',async({page})=>{
+  await createSourceNotebook(page);await page.goto('/index.html');const query='QA_GENERAL_STREAM_CLEAR_'+randomUUID();
+  await page.locator('#userInput').fill(query);await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await expect(page.locator('#messages')).toContainText('Parte recibida');await page.locator('#clearBtn').click();
+  await expect(page.locator('#messages')).toBeEmpty();await expect(page.locator('#userInput')).toBeEnabled();
+  await expect.poll(async()=>(await(await page.request.get('/__test/stream-state',{params:{query}})).json()).waiting).toBe(false);
+});
+
 test('login incorrecto presenta error rojo, accesible y visible', async ({ page }, testInfo) => {
   await page.goto('/auth.html');
   await page.locator('#signInEmail').fill('inexistente@example.test');
@@ -612,7 +659,7 @@ test('lectura del chat: texto amplio, párrafos separados y compositor compacto'
   await uploadAndProcess(page,[{name:'solar.txt',mimeType:'text/plain',buffer:Buffer.from('La energía solar proviene del sol.')}]);
   await indexSource(page,'solar.txt');
   await page.route('**/api/notebooks/*/answer',async route => {
-    const response=await route.fetch(); const result=await response.json(); const citations=result.segments[0].citations;
+    const response=await route.fetch({headers:{...route.request().headers(),accept:'application/json'}}); const result=await response.json(); const citations=result.segments[0].citations;
     result.segments=[
       {text:'La energía solar proviene del sol. Las fuentes del cuaderno permiten estudiar cómo se transforma y cómo se aprovecha en distintas situaciones.',citations},
       {text:'Conceptos principales:\n• Origen: el sol.\n• Transformación y aprovechamiento de la energía.',citations},
@@ -715,4 +762,116 @@ test('fuentes plegadas, chat sin subtítulos y cita con fragmento completo sólo
   const oldBubble = await page.locator('#conversationHistory .chat-question').boundingBox();
   expect(oldBubble.width).toBeLessThan((await page.locator('#chatScroll').boundingBox()).width*.85);
   await expect(page.locator('#conversationHistory h3')).toHaveCount(0);
+});
+
+async function streamingNotebook(page){
+  await createSourceNotebook(page);
+  await uploadAndProcess(page,[{name:'solar.txt',mimeType:'text/plain',buffer:Buffer.from('La energía solar proviene del sol.')}]);
+  await indexSource(page,'solar.txt');
+}
+async function conversation(page){
+  const id=new URL(page.url()).searchParams.get('notebook');
+  return (await (await page.request.get('/api/notebooks/'+id+'/conversation')).json()).turns;
+}
+test('streaming muestra un bloque con su cita antes del final y sólo entonces persiste el intercambio',async({page},testInfo)=>{
+  await streamingNotebook(page);const query='QA_STREAM_SUCCESS_'+randomUUID();
+  await page.locator('#semanticQuery').fill(query);await page.locator('#semanticQuery').press('Enter');
+  try{
+    await expect(page.locator('#streamingBlocks .rag-paragraph')).toHaveCount(1);
+    await expect(page.locator('#streamingBlocks')).toContainText('Primer bloque validado.');
+    await expect(page.locator('#answerNotebook')).toBeDisabled();
+    expect((await conversation(page)).length).toBe(0);
+    await page.locator('#streamingBlocks').getByRole('button',{name:'Ver cita F1',exact:true}).click();
+    await expect(page.locator('#citationQuote')).toContainText('La energía solar');await page.locator('#closeSourceText').click();
+    await page.screenshot({path:`qa-artifacts/streaming-first-block-${testInfo.project.name}.png`,fullPage:true});
+  }finally{await page.request.post('/__test/release-stream',{data:{query}});}
+  await expect(page.locator('#streamingTurn')).toBeHidden();
+  await expect(page.locator('#ragAnswerText .rag-paragraph')).toHaveCount(2);
+  expect((await conversation(page)).length).toBe(1);
+  await page.reload();await expect(page.locator('#ragAnswerText .rag-paragraph')).toHaveCount(2);
+  await expect(page.locator('#latestQuestion')).toHaveText(query);
+});
+test('streaming con una cita posterior inválida conserva sólo el bloque válido, avisa y no guarda',async({page},testInfo)=>{
+  await streamingNotebook(page);const query='QA_STREAM_INVALID_'+randomUUID();
+  await page.locator('#semanticQuery').fill(query);await page.locator('#answerNotebook').click();
+  await expect(page.locator('#streamingBlocks .rag-paragraph')).toHaveCount(1);
+  await page.request.post('/__test/release-stream',{data:{query}});
+  await expect(page.locator('#streamingStatus')).toContainText('Respuesta incompleta');
+  await expect(page.locator('#streamingBlocks .rag-paragraph')).toHaveCount(1);
+  await expect(page.locator('#streamingBlocks')).not.toContainText('Segundo bloque');
+  await expect(page.locator('#searchFeedback')).toContainText('citas válidas');
+  await expect(page.locator('#answerNotebook')).toBeEnabled();
+  expect((await conversation(page)).length).toBe(0);
+  await page.screenshot({path:`qa-artifacts/streaming-incomplete-${testInfo.project.name}.png`,fullPage:true});
+  await page.reload();await expect(page.locator('#chatEmpty')).toBeVisible();
+});
+test('cancelar después del primer bloque aborta sin guardar ni reintentar y permite otra pregunta',async({page})=>{
+  await streamingNotebook(page);const query='QA_STREAM_CANCEL_'+randomUUID();let requests=0;
+  page.on('request',request=>{if(new URL(request.url()).pathname.endsWith('/answer'))requests++;});
+  await page.locator('#semanticQuery').fill(query);await page.locator('#answerNotebook').click();
+  await expect(page.locator('#streamingBlocks .rag-paragraph')).toHaveCount(1);
+  await page.locator('#cancelAnswer').click();
+  await expect(page.locator('#streamingStatus')).toContainText('Respuesta incompleta');
+  await expect(page.locator('#searchFeedback')).toContainText('cancelada');
+  await expect.poll(async()=>(await (await page.request.get('/__test/stream-state',{params:{query}})).json()).waiting).toBe(false);
+  expect((await conversation(page)).length).toBe(0);expect(requests).toBe(1);
+  await page.locator('#semanticQuery').fill('Otra consulta solar');await page.locator('#semanticQuery').press('Enter');
+  await expect(page.locator('#ragAnswerText')).toContainText('La energía solar');await expect(page.locator('#streamingTurn')).toBeHidden();
+  expect((await conversation(page)).length).toBe(1);
+});
+
+test('una cita vacía muestra campos faltantes, no inventa extractos ni declara guardado incierto',async({page})=>{
+  await streamingNotebook(page);let requests=0;
+  page.on('request',request=>{if(new URL(request.url()).pathname.endsWith('/answer'))requests++;});
+  await page.locator('#semanticQuery').fill('QA_STREAM_EMPTY_FIRST_'+randomUUID());await page.locator('#answerNotebook').click();
+  await expect(page.locator('#searchFeedback')).toContainText('cita vacía o incompleta');
+  await expect(page.locator('#streamingTurn')).toBeHidden();
+  await expect(page.locator('#answerNotebook')).toBeEnabled();
+  expect((await conversation(page)).length).toBe(0);expect(requests).toBe(1);
+});
+
+test('salida truncada conserva sólo bloques válidos y explica el límite sin culpar a las citas',async({page})=>{
+  await streamingNotebook(page);const query='QA_STREAM_TRUNCATED_'+randomUUID();
+  await page.locator('#semanticQuery').fill(query);await page.locator('#answerNotebook').click();
+  await expect(page.locator('#streamingBlocks .rag-paragraph')).toHaveCount(1);
+  await page.request.post('/__test/release-stream',{data:{query}});
+  await expect(page.locator('#searchFeedback')).toContainText('límite de salida');
+  await expect(page.locator('#searchFeedback')).not.toContainText('citas válidas');
+  await expect(page.locator('#streamingStatus')).toContainText('los bloques no se guardaron');
+  await expect(page.locator('#streamingStatus')).not.toContainText('guardado sin confirmar');
+  expect((await conversation(page)).length).toBe(0);
+});
+
+test('referencias sin extractos generados muestran texto original, deduplican y persisten',async({page})=>{
+  await streamingNotebook(page);const query='QA_STREAM_MULTI_'+randomUUID();
+  await page.locator('#semanticQuery').fill(query);await page.locator('#answerNotebook').click();
+  try{
+    await expect(page.locator('#streamingBlocks .rag-paragraph')).toHaveCount(1);
+    await expect(page.locator('#streamingBlocks .rag-citation')).toHaveCount(1);
+    await page.getByRole('button',{name:'Ver cita F1',exact:true}).click();
+    await expect(page.locator('#citationQuote')).toHaveText('La energía solar proviene del sol.');
+    await expect(page.locator('#viewerNote')).toContainText('Vista previa del inicio del fragmento');
+    await expect(page.locator('#sourceTextChunks pre')).toBeHidden();
+    await page.locator('#sourceTextChunks summary').click();
+    await expect(page.locator('#sourceTextChunks pre')).toHaveText('La energía solar proviene del sol.');
+    await page.locator('#closeSourceText').click();
+  }finally{await page.request.post('/__test/release-stream',{data:{query}});}
+  await expect(page.locator('#streamingTurn')).toBeHidden();await expect(page.locator('#ragAnswerText .rag-paragraph')).toHaveCount(2);
+  const saved=(await conversation(page))[0].answer;
+  expect(saved.segments[0].citations).toEqual([{sourceId:'F1',quote:'La energía solar proviene del sol.',kind:'source_reference'}]);
+  await page.reload();await page.getByRole('button',{name:'Ver cita F1',exact:true}).first().click();
+  await expect(page.locator('#citationQuote')).toHaveText('La energía solar proviene del sol.');
+  await expect(page.locator('#viewerNote')).toContainText('Vista previa del inicio del fragmento');
+});
+
+test('historial anterior conserva extractos y botones diferenciados sin convertirlos en vistas previas',async({page})=>{
+  await streamingNotebook(page);
+  const source={id:'F1',filename:'solar.txt',position:0,page_number:null,content:'La energía solar proviene del sol.'};
+  const legacy={turns:[{id:randomUUID(),question:'Consulta anterior',answer:{insufficientEvidence:false,sources:[source],segments:[{text:'Respuesta anterior.',citations:[{sourceId:'F1',quote:'La energía solar proviene del sol.'},{sourceId:'F1',quote:'energía solar proviene del sol.'}]}]}}],hasMore:false};
+  await page.route('**/conversation',route=>route.fulfill({json:legacy}));
+  await page.reload();
+  await page.getByRole('button',{name:'Ver cita F1 · extracto 2',exact:true}).click();
+  await expect(page.locator('#citationQuote')).toHaveText('energía solar proviene del sol.');
+  await expect(page.locator('#viewerNote')).toContainText('Extracto conservado con esta respuesta');
+  await expect(page.locator('#viewerNote')).not.toContainText('Vista previa del inicio');
 });

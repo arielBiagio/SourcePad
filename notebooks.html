@@ -6,8 +6,8 @@
   <title>Mis cuadernos · My Chat AI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/notebooks.css?v=20261016-compact-input">
-  <script type="module" src="/assets/notebooks.js?v=20261016-compact-input"></script>
+  <link rel="stylesheet" href="/assets/notebooks.css?v=20261016-source-references">
+  <script type="module" src="/assets/notebooks.js?v=20261016-cleanup"></script>
 </head>
 <body>
   <header class="topbar">
@@ -80,6 +80,7 @@
           <div id="conversationHistory"></div>
           <p id="latestQuestion" class="chat-question" hidden></p>
           <section id="ragAnswer" class="rag-answer" aria-labelledby="ragAnswerTitle" hidden><h3 id="ragAnswerTitle" class="sr-only" tabindex="-1">Respuesta del asistente</h3><div id="ragAnswerText"></div></section>
+          <article id="streamingTurn" class="chat-turn" hidden><p id="streamingQuestion" class="chat-question"></p><section class="rag-answer" aria-label="Respuesta en curso"><div id="streamingBlocks" aria-live="polite" aria-busy="false"></div><p id="streamingStatus" class="streaming-status" role="status"></p></section></article>
         </div>
         <div class="chat-composer">
           <form id="semanticSearchForm">

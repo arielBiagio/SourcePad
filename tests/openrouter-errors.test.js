@@ -57,11 +57,19 @@ test('chat conserva streaming normal usando el SDK real contra HTTP local',async
   });
 });
 
-test('RAG pide JSON, desactiva razonamiento y mantiene política de privacidad sin retries',async () => {
+test('RAG exige esquema estricto con campos de cita obligatorios y mantiene privacidad sin retries',async () => {
   let calls = 0;
   await provider((req,res) => {
     calls++;
-    assert.deepEqual(req.body.response_format,{ type: 'json_object' });
+    assert.equal(req.body.response_format.type,'json_schema');
+    assert.equal(req.body.response_format.json_schema.strict,true);
+    const schema=req.body.response_format.json_schema.schema;
+    assert.deepEqual(schema.required,['insufficientEvidence','segments']);
+    const citation=schema.properties.segments.items.properties.citations.items;
+    assert.deepEqual(citation.required,['sourceId']);
+    assert.deepEqual(Object.keys(citation.properties),['sourceId']);
+    assert.equal(citation.additionalProperties,false);
+    assert.deepEqual(citation.properties.sourceId.enum,['F1','F2','F3','F4','F5']);
     assert.deepEqual(req.body.reasoning,{ enabled: false });
     assert.deepEqual(req.body.provider,{ data_collection: 'deny',require_parameters: true });
     assert.equal(req.body.model,'qwen/qwen3.8-flash');

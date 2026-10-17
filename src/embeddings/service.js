@@ -3,26 +3,22 @@ import { rateLimit } from 'express-rate-limit';
 import { HttpError, asyncRoute } from '../errors.js';
 import { safeDocument, checkDocumentError as check } from '../documents.js';
 import { createEmbedder, EMBEDDING_PROFILE, normalizedVector } from './client.js';
+import {findDocument} from '../document-access.js';
+import {isUuid} from '../validation.js';
+import {RAG_LIMITS} from '../../public/contracts.js';
 
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function searchInput(body) {
   if (!body || Array.isArray(body) || Object.keys(body).some(k => !['query','sourceIds'].includes(k))
     || typeof body.query !== 'string' || !body.query.trim() || Array.from(body.query.trim()).length > 1000) throw new HttpError(400, 'Ingresá una consulta de entre 1 y 1000 caracteres.');
   if (body.sourceIds !== undefined && (!Array.isArray(body.sourceIds) || !body.sourceIds.length || body.sourceIds.length > 20
-    || !body.sourceIds.every(id => typeof id === 'string' && uuid.test(id)) || new Set(body.sourceIds).size !== body.sourceIds.length)) throw new HttpError(400, 'Elegí entre 1 y 20 fuentes indexadas distintas.');
+    || !body.sourceIds.every(isUuid) || new Set(body.sourceIds).size !== body.sourceIds.length)) throw new HttpError(400, 'Elegí entre 1 y 20 fuentes indexadas distintas.');
   return { query: body.query.trim(), sourceIds: body.sourceIds || null };
 }
 export function createEmbeddingRepository(getClient, config, embed = createEmbedder(config)) {
   function configured() {
     if (!config.openRouterKey) throw new HttpError(503, 'Falta OPENROUTER_API_KEY para indexar o buscar.', 'EMBEDDINGS_NOT_CONFIGURED');
   }
-  async function find(req, res) {
-    const { data, error } = await getClient(req, res).from('documents').select('*')
-      .eq('id', req.params.documentId).eq('notebook_id', req.params.notebookId).eq('owner_id', req.user.id).maybeSingle();
-    check(error);
-    if (!data || ['deleting','deleted'].includes(data.status)) throw new HttpError(404, 'Fuente no encontrada.');
-    return data;
-  }
+  const find=(req,res)=>findDocument(getClient(req,res),req);
   return {
     async index(req, res) {
       if (!req.body || req.body.confirmExternalProcessing !== true || Object.keys(req.body).some(k => k !== 'confirmExternalProcessing')) {
@@ -65,7 +61,7 @@ export function createEmbeddingRepository(getClient, config, embed = createEmbed
       const vectors = await embed([query], signal);
       if (vectors.length !== 1) throw new HttpError(502, 'El proveedor devolvió una consulta inválida.', 'INVALID_EMBEDDING');
       const { data, error: searchError } = await client.rpc('match_notebook_chunks', {
-        notebook_id: req.params.notebookId, query_embedding: JSON.stringify(normalizedVector(vectors[0])), source_ids: sourceIds, match_limit: 5,
+        notebook_id: req.params.notebookId, query_embedding: JSON.stringify(normalizedVector(vectors[0])), source_ids: sourceIds, match_limit: RAG_LIMITS.sources,
       });
       check(searchError);
       const fields = ['document_id','filename','position','page_number','content','char_start','char_end','similarity'];

@@ -23,7 +23,8 @@ export function errorHandler(error, req, res, next) {
     : status === 413 ? 'La petición supera el tamaño permitido.'
     : 'No se pudo completar la operación. Intentá nuevamente.';
   const code = error.code && error instanceof HttpError ? error.code : 'REQUEST_FAILED';
-  if (status >= 500 || status === 429) console.error(`Error ${status} [${code}] en ${req.method} ${req.path}`);
+  const reason=error instanceof HttpError && error.code==='RAG_INVALID_RESPONSE' && /^[A-Z_]{3,48}$/.test(error.reason||'')?error.reason:undefined;
+  if (status >= 500 || status === 429) console.error(`Error ${status} [${code}]${reason?' ['+reason+']':''} en ${req.method} ${req.path}`);
   if (error instanceof HttpError && error.retryAfter) res.set('Retry-After',String(error.retryAfter));
-  res.status(status).type('application/json').json({ error: message, code });
+  res.status(status).type('application/json').json({ error: message, code,...(reason?{reason}:{}) });
 }

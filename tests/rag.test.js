@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { groundedMessages,validateGroundedAnswer,createRagRepository } from '../src/rag.js';
 
 const sources = [{ id: 'F1',document_id: 'trusted-id',filename: 'original.pdf',page_number: 7,position: 3,content: 'La energía solar proviene del sol y es renovable.',similarity: 0.6 }];
-const valid = () => ({ insufficientEvidence: false,segments: [{ text: 'La energía procede del sol.',citations: [{ sourceId: 'F1',quote: 'La energía solar proviene del sol' }] }] });
+const valid = () => ({ insufficientEvidence: false,segments: [{ text: 'La energía procede del sol.',citations: [{ sourceId: 'F1' }] }] });
 
 test('RAG: prefiere listas cuando aclaran temas o pasos y conserva texto/citas sin cambiar el JSON',() => {
   const prompt = groundedMessages('Enumerá los conceptos.',sources)[0].content;
@@ -15,27 +15,27 @@ test('RAG: prefiere listas cuando aclaran temas o pasos y conserva texto/citas s
     const answer = valid(); answer.segments[0].text = text;
     const result = validateGroundedAnswer(JSON.stringify(answer),sources);
     assert.equal(result.segments[0].text,text);
-    assert.deepEqual(result.segments[0].citations,answer.segments[0].citations);
+    assert.equal(result.segments[0].citations[0].sourceId,'F1');
+    assert.equal(result.segments[0].citations[0].kind,'source_reference');
   }
 });
 
-test('RAG: conserva metadatos confiables y comprueba extractos literales por párrafo',() => {
+test('RAG: conserva metadatos confiables y obtiene la vista previa por párrafo',() => {
   const result = validateGroundedAnswer(JSON.stringify(valid()),sources);
   assert.equal(result.sources[0].filename,'original.pdf'); assert.equal(result.sources[0].page_number,7);
-  assert.equal(result.segments[0].citations[0].quote,'La energía solar proviene del sol');
+  assert.equal(result.segments[0].citations[0].quote,sources[0].content);
   assert.deepEqual(result.sources,sources);
 });
 
-test('RAG: rechaza referencias inventadas, citas no literales, párrafos sin citas y JSON malformado',() => {
+test('RAG: rechaza referencias inventadas, extractos generados, párrafos sin citas y JSON malformado',() => {
   const forged = valid(); forged.segments[0].citations[0].sourceId = 'F999';
   const invented = valid(); invented.segments[0].citations[0].quote = 'Cita totalmente inventada';
   const empty = valid(); empty.segments[0].citations = [];
   const extra = valid(); extra.segments[0].citations[0].page_number = 99;
   const inline = valid(); inline.segments[0].text = 'Falsa referencia [F99]';
-  const duplicate = valid(); duplicate.segments[0].citations.push(duplicate.segments[0].citations[0]);
   const huge = valid(); huge.segments[0].text = 'a'.repeat(1201);
   const short = valid(); short.segments[0].citations[0].quote = 'solar';
-  for (const raw of ['not json',JSON.stringify(null),JSON.stringify({}),JSON.stringify({ insufficientEvidence: false,segments: [] }),...([forged,invented,empty,extra,inline,duplicate,huge,short].map(JSON.stringify))]) {
+  for (const raw of ['not json',JSON.stringify(null),JSON.stringify({}),JSON.stringify({ insufficientEvidence: false,segments: [] }),...([forged,invented,empty,extra,inline,huge,short].map(JSON.stringify))]) {
     assert.throws(() => validateGroundedAnswer(raw,sources),{ code: 'RAG_INVALID_RESPONSE' });
   }
 });
@@ -67,13 +67,13 @@ test('RAG: no llama al generador sin fragmentos y valida consentimiento antes de
 });
 
 test('RAG: limita salida, rechaza truncamiento y respeta cancelación sin reintentos',async () => {
-  for (const chunk of [
-    { choices: [{ delta: { content: 'x'.repeat(12001) } }] },
-    { choices: [{ delta: { content: JSON.stringify(valid()) },finish_reason: 'length' }] },
+  for (const [chunk,code] of [
+    [{ choices: [{ delta: { content: 'x'.repeat(12001) } }] },'RAG_OUTPUT_TOO_LARGE'],
+    [{ choices: [{ delta: { content: JSON.stringify(valid()) },finish_reason: 'length' }] },'RAG_OUTPUT_TRUNCATED'],
   ]) {
     let calls = 0;
     const repository = createRagRepository({ search: async () => ({ matches: sources,indexedSources: 1 }) },async () => { calls++; return (async function* () { yield chunk; })(); },{});
-    await assert.rejects(repository.answer({ body: { query: 'Consulta',confirmExternalProcessing: true } },{}),{ code: 'RAG_INVALID_RESPONSE' });
+    await assert.rejects(repository.answer({ body: { query: 'Consulta',confirmExternalProcessing: true } },{}),{ code });
     assert.equal(calls,1);
   }
   const controller = new AbortController(); controller.abort(); let calls = 0;

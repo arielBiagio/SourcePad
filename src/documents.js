@@ -2,20 +2,15 @@ import multer from 'multer';
 import { randomUUID, createHash } from 'node:crypto';
 import { rateLimit } from 'express-rate-limit';
 import { HttpError, asyncRoute } from './errors.js';
+import {findDocument,checkDocumentError as check} from './document-access.js';
+import {isUuid} from './validation.js';
+export {checkDocumentError} from './document-access.js';
 
 const bucket = 'notebook-sources';
 const fields = 'id,notebook_id,filename,extension,mime_type,byte_size,status,error_message,created_at,deleted_at,page_count,empty_page_count,chunk_count,processed_at,processing_version,index_status,indexed_chunk_count,embedding_profile,embedded_at,embedding_error';
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const types = { pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown' };
-export const safeDocument = row => Object.fromEntries(fields.split(',').map(field => [field, row[field]]));
-
-export function checkDocumentError(error) {
-  if (!error) return;
-  if (error.code === 'P0002') throw new HttpError(404, 'Fuente no encontrada.');
-  if (error.code === '55000') throw new HttpError(409, 'La operación no pudo completarse en el estado actual. Actualizá e intentá nuevamente.');
-  throw new HttpError(503, 'No se pudo acceder a las fuentes. Verificá la conexión y las migraciones de Supabase.', 'DOCUMENT_SERVICE_UNAVAILABLE');
-}
-const check = checkDocumentError;
+const fieldNames=fields.split(',');
+export const safeDocument = row => Object.fromEntries(fieldNames.map(field => [field, row[field]]));
 
 export function validateFile(file) {
   if (!file?.buffer?.length) throw new HttpError(400, 'Elegí un archivo que no esté vacío.');
@@ -39,13 +34,7 @@ export function validateFile(file) {
 
 export function createDocumentRepository(getClient) {
   function client(req, res) { return getClient(req, res); }
-  async function find(req, res, includeDeleted = false) {
-    const { data, error } = await client(req, res).from('documents').select('*')
-      .eq('id', req.params.documentId).eq('notebook_id', req.params.notebookId).eq('owner_id', req.user.id).maybeSingle();
-    check(error);
-    if (!data || (!includeDeleted && data.status === 'deleted')) throw new HttpError(404, 'Fuente no encontrada.');
-    return data;
-  }
+  const find=(req,res,includeDeleted=false)=>findDocument(client(req,res),req,{hiddenStatuses:includeDeleted?[]:['deleted']});
   async function transition(req, res, name, id) {
     const { error } = await client(req, res).rpc(name, { document_id: id });
     check(error);
@@ -106,7 +95,7 @@ export function mountDocuments(app, repository, config, rateLimitFactory = rateL
   const base = '/api/notebooks/:notebookId/documents';
   // Hereda la autenticación y el control de modo Supabase de /api/notebooks.
   app.use(base, asyncRoute(async (req, res, next) => { await repository.assertNotebook(req, res); next(); }));
-  app.param('documentId', (req, res, next, id) => next(uuid.test(id) ? undefined : new HttpError(400, 'Identificador de fuente inválido.')));
+  app.param('documentId', (req, res, next, id) => next(isUuid(id) ? undefined : new HttpError(400, 'Identificador de fuente inválido.')));
   app.get(base, asyncRoute(async (req, res) => res.json(await repository.list(req, res))));
   const upload = multer({ storage: multer.memoryStorage(), defParamCharset: 'utf8', limits: { fileSize: config.maxUploadBytes, files: 1, fields: 0, parts: 1 } }).single('file');
   // Dos archivos como máximo en memoria por proceso; los demás reciben una respuesta reintentable.
