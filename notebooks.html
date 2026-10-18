@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mis cuadernos · SourcePad</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/notebooks.css?v=20261018">
-  <link rel="stylesheet" href="/assets/theme.css?v=20261018-sourcepad-scrollbars">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/notebooks.css?v=20261018-terracota-notebook">
+  <link rel="stylesheet" href="/assets/theme.css?v=20261018-terracota-night">
   <script type="module" src="/assets/notebooks.js?v=20261018-sourcepad"></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/notebooks.html"><span class="brand-icon">&gt;_</span><span>SourcePad</span></a>
-    <nav class="app-nav" aria-label="Navegación"><a href="/notebooks.html" aria-current="page">Cuadernos</a><a href="/index.html">Chat general</a></nav>
+    <a class="brand" href="/notebooks.html"><span class="brand-icon" aria-hidden="true"></span><span>SourcePad</span></a>
+    <nav class="app-nav" aria-label="Navegación"><a href="/index.html">Chat general</a><a href="/notebooks.html" aria-current="page">Cuadernos</a></nav>
     <div class="account"><span id="userName" class="mono">…</span><button id="logout" class="quiet">Salir</button></div>
   </header>
   <div class="layout">
@@ -53,6 +53,35 @@
     <div class="workspace-heading"><button id="closeDetail" class="quiet" aria-label="Cerrar cuaderno">← Biblioteca</button><div><h1 id="detailTitle"></h1><p id="detailDescription" class="intro"></p></div></div>
     <nav class="workspace-tabs" aria-label="Paneles del cuaderno"><button data-show-panel="sources" aria-pressed="false">Fuentes</button><button data-show-panel="chat" aria-pressed="true">Chat</button><button data-show-panel="tools" aria-pressed="false">Cuadernos</button></nav>
     <div class="workspace-columns">
+      <aside class="work-panel tools-panel" data-panel="tools" aria-label="Cuadernos y herramientas">
+        <div class="panel-heading"><h2>Cuadernos</h2><span class="mono">▤</span></div><div id="workspaceNotebooks" class="workspace-notebooks"></div><button id="workspaceCreate" class="quiet">＋ Nuevo cuaderno</button>
+        <details id="futureTools" class="future-tools"><summary>Herramientas <span class="count-pill">próximamente</span></summary><div class="future-tool"><span>◈</span><div>Resumen de fuentes</div></div><div class="future-tool"><span>⌘</span><div>Guía de estudio</div></div><div class="future-tool"><span>✧</span><div>Notas y conexiones</div></div></details>
+        <div class="notebook-settings"><button id="editNotebook" class="quiet">Editar cuaderno</button><button id="deleteNotebook" class="danger">Eliminar cuaderno</button><p id="deleteNotebookNote" class="panel-note" hidden>Eliminá sus fuentes antes de eliminar el cuaderno.</p></div>
+      </aside>
+
+      <section class="work-panel chat-panel is-active" data-panel="chat" aria-label="Chat del cuaderno">
+        <div class="panel-heading"><h2>Chat</h2><button id="clearConversation" class="quiet">Borrar chat</button></div>
+        <p id="historyFeedback" class="feedback history-feedback" role="status"></p>
+        <div id="chatScroll" class="chat-scroll">
+          <div id="chatEmpty" class="chat-empty"><div class="chat-symbol" aria-hidden="true"><svg width="38" height="42" viewBox="0 0 32 36" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="22" height="30" rx="3"></rect><path d="M12 3v30M3 10h5M3 18h5M3 26h5"></path><path class="notebook-lines" d="M17 12h6M17 18h6M17 24h4"></path></svg></div></div>
+          <div id="conversationHistory"></div>
+          <article id="latestTurn">
+          <p id="latestQuestion" class="chat-question" hidden></p>
+          <section id="ragAnswer" class="rag-answer" aria-labelledby="ragAnswerTitle" hidden><h3 id="ragAnswerTitle" class="sr-only" tabindex="-1">Respuesta del asistente</h3><div id="ragAnswerText"></div></section>
+          </article>
+          <article id="streamingTurn" class="chat-turn" hidden><p id="streamingQuestion" class="chat-question"></p><section class="rag-answer" aria-label="Respuesta en curso"><div id="streamingBlocks" aria-live="polite" aria-busy="false"></div><p id="streamingStatus" class="streaming-status" role="status"></p></section></article>
+        </div>
+        <div class="chat-composer conversation-composer">
+          <form id="semanticSearchForm">
+            <label for="semanticQuery" class="sr-only">¿Qué querés encontrar?</label><textarea id="semanticQuery" rows="1" maxlength="1000" required placeholder="Preguntale algo a tus fuentes…" aria-describedby="queryKeyboardHelp"></textarea>
+            <span id="queryKeyboardHelp" class="sr-only">Enter envía la consulta. Shift más Enter agrega un salto de línea.</span>
+            <div class="composer-actions"><button id="answerNotebook" class="primary" type="submit" aria-label="Enviar pregunta"><span aria-hidden="true">↑</span></button></div>
+          </form>
+          <button id="cancelAnswer" class="quiet" type="button" hidden>Cancelar respuesta</button>
+          <p id="searchFeedback" class="feedback" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
       <aside class="work-panel sources-panel" data-panel="sources" aria-label="Fuentes del cuaderno">
         <div class="panel-heading"><h2>Fuentes <span id="sourceCount" class="count-pill">0</span></h2><button id="refreshSources" class="icon-button" aria-label="Actualizar fuentes">↻</button></div>
         <button id="addSources" class="add-sources">＋ Agregar fuentes</button>
@@ -61,33 +90,6 @@
         <p id="noSources" class="sources-empty" hidden>Sin fuentes</p>
         <p id="embeddingsSetupNote" class="source-stage-note" hidden>OpenRouter no está configurado.</p>
         <button id="stopIndexing" class="quiet" type="button" hidden>Detener después de este lote</button>
-      </aside>
-      <section class="work-panel chat-panel is-active" data-panel="chat" aria-label="Chat del cuaderno">
-        <div class="panel-heading"><h2>Chat</h2><button id="clearConversation" class="quiet">Borrar chat</button></div>
-        <p id="historyFeedback" class="feedback history-feedback" role="status"></p>
-        <div id="chatScroll" class="chat-scroll">
-          <div id="chatEmpty" class="chat-empty"><div class="chat-symbol" aria-hidden="true">✳</div></div>
-          <div id="conversationHistory"></div>
-          <article id="latestTurn">
-          <p id="latestQuestion" class="chat-question" hidden></p>
-          <section id="ragAnswer" class="rag-answer" aria-labelledby="ragAnswerTitle" hidden><h3 id="ragAnswerTitle" class="sr-only" tabindex="-1">Respuesta del asistente</h3><div id="ragAnswerText"></div></section>
-          </article>
-          <article id="streamingTurn" class="chat-turn" hidden><p id="streamingQuestion" class="chat-question"></p><section class="rag-answer" aria-label="Respuesta en curso"><div id="streamingBlocks" aria-live="polite" aria-busy="false"></div><p id="streamingStatus" class="streaming-status" role="status"></p></section></article>
-        </div>
-        <div class="chat-composer">
-          <form id="semanticSearchForm">
-            <label for="semanticQuery" class="sr-only">¿Qué querés encontrar?</label><textarea id="semanticQuery" rows="1" maxlength="1000" required placeholder="Preguntale algo a tus fuentes…" aria-describedby="queryKeyboardHelp"></textarea>
-            <span id="queryKeyboardHelp" class="sr-only">Enter envía la consulta. Shift más Enter agrega un salto de línea.</span>
-            <div class="composer-actions"><button id="answerNotebook" class="primary" type="submit">Preguntar</button></div>
-          </form>
-          <button id="cancelAnswer" class="quiet" type="button" hidden>Cancelar respuesta</button>
-          <p id="searchFeedback" class="feedback" role="status" aria-live="polite"></p>
-        </div>
-      </section>
-      <aside class="work-panel tools-panel" data-panel="tools" aria-label="Cuadernos y herramientas">
-        <div class="panel-heading"><h2>Cuadernos</h2><span class="mono">▤</span></div><div id="workspaceNotebooks" class="workspace-notebooks"></div><button id="workspaceCreate" class="quiet">＋ Nuevo cuaderno</button>
-        <details id="futureTools" class="future-tools"><summary>Herramientas <span class="count-pill">próximamente</span></summary><div class="future-tool"><span>◈</span><div>Resumen de fuentes</div></div><div class="future-tool"><span>⌘</span><div>Guía de estudio</div></div><div class="future-tool"><span>✧</span><div>Notas y conexiones</div></div></details>
-        <div class="notebook-settings"><button id="editNotebook" class="quiet">Editar cuaderno</button><button id="deleteNotebook" class="danger">Eliminar cuaderno</button><p id="deleteNotebookNote" class="panel-note" hidden>Eliminá sus fuentes antes de eliminar el cuaderno.</p></div>
       </aside>
     </div>
   </section>

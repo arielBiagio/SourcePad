@@ -5,25 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chat general · SourcePad</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/tailwind.css">
-  <link rel="stylesheet" href="/assets/theme.css?v=20261018-sourcepad-scrollbars">
-  <link rel="stylesheet" href="/assets/general-chat.css?v=20261018-sourcepad-scrollbars">
+  <link rel="stylesheet" href="/assets/theme.css?v=20261018-terracota-night">
+  <link rel="stylesheet" href="/assets/general-chat.css?v=20261018-terracota-night">
   <script src="/assets/marked.umd.js"></script>
   <script src="/assets/purify.min.js"></script>
-  <script type="module" src="/assets/general-chat.js?v=20261018-sourcepad"></script>
+  <script type="module" src="/assets/general-chat.js?v=20261018-terracota-night"></script>
 </head>
 <body class="general-page">
   <header class="topbar">
-    <a class="brand" href="/notebooks.html"><span class="brand-icon">&gt;_</span><span>SourcePad</span></a>
-    <nav class="app-nav" aria-label="Navegación"><a href="/notebooks.html">Cuadernos</a><a href="/index.html" aria-current="page">Chat general</a></nav>
+    <a class="brand" href="/notebooks.html"><span class="brand-icon" aria-hidden="true"></span><span>SourcePad</span></a>
+    <nav class="app-nav" aria-label="Navegación"><a href="/index.html" aria-current="page">Chat general</a><a href="/notebooks.html">Cuadernos</a></nav>
     <div class="account"><span id="userName" class="mono"></span><button id="logoutBtn" class="quiet">Salir</button></div>
   </header>
   <main class="general-workspace">
     <section class="general-chat-panel" aria-label="Chat general">
       <div class="general-heading"><h1>Chat general</h1><span class="chat-state"><span id="statusDot" aria-hidden="true"></span><span id="statusPing" hidden></span><span id="statusText" role="status"></span></span><button id="clearBtn" class="quiet" disabled>Borrar chat</button></div>
       <div id="messages" class="general-messages"></div>
-      <div class="general-composer">
+      <div class="general-composer conversation-composer">
         <form id="chatForm">
           <label for="userInput" class="sr-only">Mensaje</label>
           <textarea id="userInput" rows="1" placeholder="Escribí tu mensaje…" aria-label="Mensaje" disabled></textarea>

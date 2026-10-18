@@ -84,7 +84,7 @@ function scrollToBottom() {
 
 function addMessage({ role, text }) {
   const wrapper = document.createElement('div');
-  wrapper.className = `msg-in flex flex-col gap-1.5 max-w-[85%] ${role === 'user' ? 'items-end self-end' : 'items-start self-start'}`;
+  wrapper.className = `msg-in message ${role === 'user' ? 'message-user' : 'message-assistant'}`;
 
   const label = document.createElement('span');
   label.className = 'sr-only';
@@ -92,17 +92,7 @@ function addMessage({ role, text }) {
   label.textContent = role === 'user' ? 'vos' : 'asistente';
 
   const bubble = document.createElement('div');
-  bubble.className = `rounded-xl px-4 py-3 border text-sm leading-relaxed ${role === 'user' ? 'rounded-tr-sm whitespace-pre-wrap' : 'rounded-tl-sm markdown-content'}`;
-
-  if (role === 'user') {
-    bubble.style.background = 'var(--accent-dim)';
-    bubble.style.borderColor = 'var(--accent)';
-    bubble.style.color = 'var(--text)';
-  } else {
-    bubble.style.background = 'transparent';
-    bubble.style.borderColor = 'transparent';
-    bubble.style.color = 'var(--text)';
-  }
+  bubble.className = `message-bubble${role === 'user' ? '' : ' markdown-content'}`;
 
   bubble.textContent = text;
   wrapper.appendChild(label);
@@ -114,7 +104,7 @@ function addMessage({ role, text }) {
 
 function addLoadingBubble() {
   const wrapper = document.createElement('div');
-  wrapper.className = 'msg-in flex flex-col gap-1.5 max-w-[85%] items-start self-start';
+  wrapper.className = 'msg-in message message-assistant';
   wrapper.id = 'loadingBubble';
 
   const label = document.createElement('span');
@@ -123,14 +113,11 @@ function addLoadingBubble() {
   label.textContent = 'asistente';
 
   const bubble = document.createElement('div');
-  bubble.className = 'rounded-xl rounded-tl-sm px-4 py-3.5 border flex items-center gap-1.5';
-  bubble.style.background = 'var(--surface-2)';
-  bubble.style.borderColor = 'var(--border)';
+  bubble.className = 'loading-dots';
 
   for (let i = 0; i < 3; i++) {
     const dot = document.createElement('span');
-    dot.className = 'dot w-1.5 h-1.5 rounded-full';
-    dot.style.background = 'var(--text-dim)';
+    dot.className = 'loading-dot';
     bubble.appendChild(dot);
   }
 
@@ -152,8 +139,8 @@ function setStatus(state) {
     statusPing.style.background = 'var(--accent)';
     statusText.textContent = 'Respondiendo…';
   } else if (state === 'error') {
-    statusDot.style.background = '#F87171';
-    statusPing.style.background = '#F87171';
+    statusDot.style.background = 'var(--danger)';
+    statusPing.style.background = 'var(--danger)';
     statusText.textContent = 'error de conexión';
   } else {
     statusDot.style.background = 'var(--ok)';
