@@ -1,7 +1,8 @@
-export function createSourceViewer({$,api,http,preview,previewFiles,getNotebook,isBusy,lockSources,sourceFeedback}) {
-    let textSource=null,nextChunkOffset=null,viewerController=null,originalURL=null,viewerVersion=0;
-    const originalBlob=(source,bookId,signal)=>preview ? Promise.resolve(previewFiles.get(source.id))
-      : http.blob('/api/notebooks/'+bookId+'/documents/'+source.id+'/download',{signal});
+import {createPdfPreview} from './pdf-preview.js';
+
+export function createSourceViewer({$,api,http,getNotebook,isBusy,lockSources,sourceFeedback}) {
+    let textSource=null,nextChunkOffset=null,viewerController=null,pdfPreview=null,viewerVersion=0;
+    const originalBlob=(source,bookId,signal)=>http.blob('/api/notebooks/'+bookId+'/documents/'+source.id+'/download',{signal});
   async function downloadSource(source) {
     if (isBusy()) return;
     lockSources(true);
@@ -28,38 +29,40 @@ export function createSourceViewer({$,api,http,preview,previewFiles,getNotebook,
   });
   async function showOriginalSource() {
     if (!textSource || !getNotebook()) return;
+    $('sourceTextPanel').classList.add('is-original');
     viewerController?.abort(); viewerController = new AbortController();
     const version = ++viewerVersion; const source = textSource; const bookId = getNotebook().id;
-    if (originalURL) URL.revokeObjectURL(originalURL); originalURL = null;
+    pdfPreview?.destroy(); pdfPreview = null;
     $('sourceTextChunks').hidden = true; $('moreSourceText').hidden = true;
     $('originalPreview').hidden = false; $('originalPreview').replaceChildren(); $('sourceViewerFeedback').textContent = 'Abriendo original privado…';
     try {
       const blob = await originalBlob(source,bookId,AbortSignal.any([viewerController.signal,AbortSignal.timeout(60000)]));
       if (!blob) throw new Error('El archivo ya no está disponible en esta vista.');
       if (version !== viewerVersion || getNotebook()?.id !== bookId) return;
+      $('sourceViewerFeedback').textContent = '';
       if (source.extension === 'pdf') {
-        originalURL = URL.createObjectURL(new Blob([blob],{ type: 'application/pdf' }));
-        const frame = document.createElement('iframe'); frame.title = 'Vista previa de '+source.filename; frame.src = originalURL;
-        $('originalPreview').append(frame);
+        pdfPreview = createPdfPreview(blob, $('originalPreview'), {signal:viewerController.signal,onError:message=>{
+          if(version===viewerVersion) $('sourceViewerFeedback').textContent=message;
+        }});
+        await pdfPreview.ready;
       } else {
         const text = await blob.text(); if (version !== viewerVersion) return;
         const pre = document.createElement('pre'); pre.textContent = text.slice(0,100000); $('originalPreview').append(pre);
         if (text.length > 100000) $('sourceViewerFeedback').textContent = 'Vista previa limitada a 100.000 caracteres. Descargá el archivo para leerlo completo.';
       }
-      if (version === viewerVersion && !$('sourceViewerFeedback').textContent.startsWith('Vista previa limitada')) $('sourceViewerFeedback').textContent = '';
-    } catch (error) { if (version === viewerVersion && error.name !== 'AbortError') $('sourceViewerFeedback').textContent = error.message; }
+    } catch (error) { if (version === viewerVersion && error.name !== 'AbortError') $('sourceViewerFeedback').textContent = source.extension==='pdf'?'No se pudo abrir el PDF. Podés descargar el original.':error.message; }
   }
 
 
   function closeSourceText() {
     viewerVersion++; viewerController?.abort(); viewerController = null;
-    if (originalURL) URL.revokeObjectURL(originalURL); originalURL = null;
+    pdfPreview?.destroy(); pdfPreview = null;
     $('sourceTextPanel').close(); $('sourceTextChunks').replaceChildren(); $('originalPreview').replaceChildren();
+    $('sourceTextPanel').classList.remove('is-original');
     $('moreSourceText').hidden = true; textSource = null; nextChunkOffset = null;
     $('citationQuote').hidden = true; $('citationQuote').textContent = '';
     $('citationMeta').hidden = true; $('citationMeta').textContent = '';
     document.querySelector('.viewer-tabs').hidden = false;
-    $('viewerNote').textContent = 'El texto extraído conserva la página original; tablas y columnas pueden requerir revisión.';
   }
   $('closeSourceText').addEventListener('click', closeSourceText);
   $('moreSourceText').addEventListener('click', () => showSourceText(textSource, true));

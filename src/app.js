@@ -102,6 +102,8 @@ export async function createApp({ config, authAdapter, notebookRepository, docum
   }
   app.get('/assets/purify.min.js', (req, res) => res.sendFile('node_modules/dompurify/dist/purify.min.js', { root }));
   app.get('/assets/marked.umd.js', (req, res) => res.sendFile('node_modules/marked/lib/marked.umd.js', { root }));
+  app.get('/assets/pdf.mjs', (req, res) => res.sendFile('node_modules/pdfjs-dist/build/pdf.mjs', { root }));
+  app.get('/assets/pdf.worker.mjs', (req, res) => res.sendFile('node_modules/pdfjs-dist/build/pdf.worker.mjs', { root }));
   app.use('/assets', express.static(fileURLToPath(new URL('../public/', import.meta.url)), { index: false, dotfiles: 'deny' }));
   app.use((req, res, next) => next(new HttpError(404, 'Recurso no encontrado.')));
   app.use(errorHandler);

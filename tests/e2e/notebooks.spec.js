@@ -28,35 +28,124 @@ test.beforeEach(async ({ page,request }) => {
   });
 });
 
-test('vista previa permite crear/editar/borrar sin peticiones de autenticación', async ({ page }, testInfo) => {
-  const apiCalls = [];
-  page.on('request', request => { if (request.url().includes('/api/')) apiCalls.push(request.url()); });
+test('sin demo: preview no evita la sesión y el CRUD usa la cuenta',async({page})=>{
   await page.goto('/notebooks.html?preview=1');
-  await expect(page.getByRole('heading', { name: 'Mis cuadernos' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await expect(page.getByText('Vista de ejemplo ·', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: '+ Nuevo cuaderno' }).click();
-  await page.getByLabel('Título', { exact: true }).fill('Cuaderno nuevo');
-  await page.getByLabel('Descripción').fill('Mis notas');
-  await page.getByRole('button', { name: 'Crear cuaderno', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Cuaderno nuevo' })).toBeVisible();
-  await page.getByRole('button', { name: /Cuaderno nuevo/ }).click();
-  await selectPanel(page,'tools');
-  await page.getByRole('button', { name: 'Editar cuaderno', exact: true }).click();
-  await page.getByLabel('Título', { exact: true }).fill('Cuaderno editado');
-  await page.getByRole('button', { name: 'Guardar cambios' }).click();
-  await selectPanel(page,'tools');
-  await page.getByRole('button', { name: 'Eliminar cuaderno' }).click();
-  await page.getByRole('dialog', { name: 'Eliminar cuaderno' }).getByRole('button', { name: 'Eliminar cuaderno' }).click();
-  await expect(page.getByRole('heading', { name: 'Cuaderno editado' })).toHaveCount(0);
-  await page.screenshot({ path: `qa-artifacts/notebooks-${testInfo.project.name}.png`, fullPage: true });
-  expect(apiCalls).toEqual([]);
+  await expect(page).toHaveURL(/auth.html$/);
+  await expect(page.getByRole('link',{name:/ejemplo|prueba/i})).toHaveCount(0);
+  await createSourceNotebook(page);
+  await page.goto('/notebooks.html?preview=1');
+  await expect(page).not.toHaveURL(/preview=/);
+  await expect(page.locator('#notebookGrid .card')).toHaveCount(1);
+  await page.getByRole('heading',{name:'Biblioteca de prueba',exact:true}).click();
+  await selectPanel(page,'tools');await page.locator('#editNotebook').click();
+  await page.getByLabel('Título',{exact:true}).fill('Cuaderno editado');
+  await page.getByRole('button',{name:'Guardar cambios'}).click();
+  await expect(page.locator('#detailTitle')).toHaveText('Cuaderno editado');
+  await selectPanel(page,'tools');await page.locator('#deleteNotebook').click();
+  await page.getByRole('dialog',{name:'Eliminar cuaderno'}).getByRole('button',{name:'Eliminar cuaderno'}).click();
+  await expect(page.locator('#notebookGrid .card')).toHaveCount(0);
+});
+
+test('interfaz unificada: login sin scroll, navegación activa y sin textos accesorios',async({page},testInfo)=>{
+  await page.goto('/auth.html');
+  for(const id of ['signInTab','signUpTab']){
+    await page.locator('#'+id).click();
+    expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight+1)).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await expect(page.locator('.auth-shell')).toBeInViewport();
+  }
+  await page.screenshot({path:'qa-artifacts/login-clean-'+testInfo.project.name+'.png',fullPage:true});
+  await createSourceNotebook(page);
+  const background=await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor);
+  await expect(page.locator('.app-nav').getByRole('link',{name:/Cuadernos/})).toHaveAttribute('aria-current','page');
+  await expect(page.getByText('Un espacio separado para cada tema, proyecto o idea.')).toHaveCount(0);
+  await expect(page.locator('.sidebar-note')).toHaveCount(0);
+  await page.locator('.app-nav').getByRole('link',{name:'Chat general',exact:true}).click();
+  await expect(page.locator('.app-nav').getByRole('link',{name:'Chat general',exact:true})).toHaveAttribute('aria-current','page');
+  expect(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(background);
+  await expect(page.locator('#messages')).toBeEmpty();
+  await expect(page.getByText('Enter para enviar · Shift+Enter para salto de línea')).toHaveCount(0);
+  await page.screenshot({path:'qa-artifacts/general-clean-'+testInfo.project.name+'.png',fullPage:true});
+});
+
+test('los controles esperan la carga del módulo antes de admitir clics',async({page})=>{
+  await createSourceNotebook(page);
+  let release;
+  const gate=new Promise(resolve=>{release=resolve;});
+  await page.route('**/assets/notebooks.js?*',async route=>{await gate;await route.continue();});
+  await page.goto('/notebooks.html',{waitUntil:'commit'});
+  try{await expect(page.locator('#createNotebook')).toBeDisabled();}finally{release();}
+  await expect(page.locator('#createNotebook')).toBeEnabled();
+  await page.locator('#createNotebook').click();
+  await expect(page.locator('#notebookDialog')).toBeVisible();
+});
+
+test('original ocupa todo el viewport y el visor de citas sigue compacto',async({page},testInfo)=>{
+  await createSourceNotebook(page);
+  await uploadAndProcess(page,[
+    {name:'original.pdf',mimeType:'application/pdf',buffer:pdfFixture(['Documento sintetico para revisar el original.','Segunda pagina del documento sintetico.'])},
+    {name:'original.txt',mimeType:'text/plain',buffer:Buffer.from('Texto original sintético.')},
+  ]);
+  for(const name of ['original.pdf','original.txt']){
+    await sourceOptions(page,name);
+    await page.getByRole('button',{name:'Ver texto de '+name,exact:true}).click();
+    await page.locator('#showOriginal').click();
+    await expect(page.locator('#sourceTextPanel')).toHaveClass(/is-original/);
+    await expect(page.locator(name.endsWith('.pdf')?'#originalPreview canvas':'#originalPreview pre')).toBeVisible();
+    const rect=await page.locator('#sourceTextPanel').boundingBox(),size=page.viewportSize();
+    expect(rect.width).toBeGreaterThanOrEqual(size.width-2);expect(rect.height).toBeGreaterThanOrEqual(size.height-2);
+    if(name.endsWith('.pdf')){
+      const canvas=page.locator('#originalPreview canvas');
+      await expect(page.getByRole('button',{name:'Página siguiente',exact:true})).toBeEnabled();
+      // Verifica tinta real: un rectángulo blanco no es una vista previa válida.
+      expect(await canvas.evaluate(el=>{
+        const data=el.getContext('2d').getImageData(0,0,el.width,el.height).data;
+        let ink=0;for(let i=0;i<data.length;i+=4)if(data[i+3]&&data[i]<180&&data[i+1]<180&&data[i+2]<180)ink++;
+        return ink;
+      })).toBeGreaterThan(50);
+      await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
+      await expect(canvas).toHaveAttribute('aria-label','Página 2 de 2');
+      await expect(page.getByRole('button',{name:'Página anterior',exact:true})).toBeEnabled();
+      await expect(page.getByRole('button',{name:'Página siguiente',exact:true})).toBeDisabled();
+      const width=(await canvas.boundingBox()).width;
+      await page.getByRole('button',{name:'Acercar PDF',exact:true}).click();
+      await expect.poll(async()=>(await canvas.boundingBox()).width).toBeGreaterThan(width);
+      await expect(page.getByRole('button',{name:'Alejar PDF',exact:true})).toBeEnabled();
+    }
+    await page.screenshot({path:'qa-artifacts/full-original-'+name+'-'+testInfo.project.name+'.png',fullPage:true});
+    await page.locator('#closeSourceText').click();
+    await expect(page.locator('#sourceTextPanel')).not.toHaveClass(/is-original/);
+  }
+});
+
+test('historial abre al final y streaming ancla la pregunta sin arrastrar la lectura',async({page})=>{
+  await streamingNotebook(page);
+  const source={id:'F1',filename:'solar.txt',position:0,page_number:null,content:'La energía solar proviene del sol.'};
+  const fixture={turns:Array.from({length:20},(_,i)=>({id:randomUUID(),question:'Pregunta previa '+i,answer:{insufficientEvidence:false,sources:[source],segments:[{text:'Contenido anterior. '.repeat(50),citations:[{sourceId:'F1',quote:source.content,kind:'source_reference'}]}]}})),hasMore:false};
+  await page.route('**/conversation',route=>route.fulfill({json:fixture}));await page.reload();
+  await expect(page.locator('#latestQuestion')).toHaveText('Pregunta previa 19');
+  await expect.poll(()=>page.locator('#chatScroll').evaluate(el=>el.scrollHeight-el.scrollTop-el.clientHeight)).toBeLessThanOrEqual(2);
+  await page.unroute('**/conversation');
+  const query='QA_STREAM_LAYOUT_'+randomUUID();
+  await page.locator('#semanticQuery').fill(query);await page.locator('#semanticQuery').press('Enter');
+  let anchor;
+  try{
+    await expect(page.locator('#streamingBlocks .rag-paragraph')).toHaveCount(1);
+    const positions=await page.locator('#chatScroll').evaluate(el=>({top:el.getBoundingClientRect().top+parseFloat(getComputedStyle(el).paddingTop),question:document.getElementById('streamingQuestion').getBoundingClientRect().top}));
+    expect(Math.abs(positions.top-positions.question)).toBeLessThanOrEqual(3);
+    await page.locator('#chatScroll').evaluate(el=>{el.scrollTop+=120;});
+    anchor=(await page.locator('#streamingQuestion').boundingBox()).y;
+  }finally{await page.request.post('/__test/release-stream',{data:{query}});}
+  await expect(page.locator('#streamingTurn')).toBeHidden();
+  expect(Math.abs((await page.locator('#latestQuestion').boundingBox()).y-anchor)).toBeLessThanOrEqual(3);
+  await page.reload();await expect(page.locator('#latestQuestion')).toHaveText(query);
+  await expect.poll(()=>page.locator('#chatScroll').evaluate(el=>el.scrollHeight-el.scrollTop-el.clientHeight)).toBeLessThanOrEqual(2);
 });
 
 test('registro a cuadernos, persistencia al recargar, chat y logout', async ({ page }) => {
   await page.goto('/auth.html');
-  await page.getByRole('tab', { name: 'sign up' }).click();
-  await page.getByLabel('display name').fill('Persona de prueba');
+  await page.getByRole('tab', { name: 'Crear cuenta' }).click();
+  await page.getByLabel('Nombre').fill('Persona de prueba');
   await page.locator('#signUpEmail').fill(randomUUID() + '@example.test');
   await page.locator('#signUpPassword').fill('Testing123!');
   await page.getByRole('button', { name: 'Crear cuenta' }).click();
@@ -109,6 +198,13 @@ test('chat general limita el contexto y agrupa el renderizado sin retraso por le
     await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
     await expect(page.locator('#userInput')).toBeEnabled();
     await expect(page.locator('#messages strong')).toHaveCount(i+1);
+    const geometry=await page.locator('#messages').evaluate(el=>({
+      top:el.getBoundingClientRect().top+parseFloat(getComputedStyle(el).paddingTop),
+      question:el.lastElementChild.querySelector('.items-end>div').getBoundingClientRect().top,
+      overflow:el.scrollWidth-el.clientWidth,
+    }));
+    expect(Math.abs(geometry.top-geometry.question)).toBeLessThanOrEqual(3);
+    expect(geometry.overflow).toBeLessThanOrEqual(1);
   }
   expect(bodies).toHaveLength(8);
   expect(bodies.every(body=>body.historial.length<=6&&Buffer.byteLength(JSON.stringify(body))<=120*1024)).toBe(true);
@@ -123,7 +219,11 @@ test('chat general cancela antes y después del primer chunk sin duplicar respue
     const query='QA_GENERAL_STREAM_'+suffix+'_'+randomUUID();
     await page.locator('#userInput').fill(query);await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
     await expect.poll(async()=>(await(await page.request.get('/__test/stream-state',{params:{query}})).json()).waiting).toBe(true);
-    if(suffix==='AFTER')await expect(page.locator('#messages')).toContainText('Parte recibida 😎.');
+    if(suffix==='AFTER'){
+      await expect(page.locator('#messages')).toContainText('Parte recibida 😎.');
+      const offset=await page.locator('#messages').evaluate(el=>el.lastElementChild.querySelector('.items-end>div').getBoundingClientRect().top-el.getBoundingClientRect().top-parseFloat(getComputedStyle(el).paddingTop));
+      expect(Math.abs(offset)).toBeLessThanOrEqual(3);
+    }
     await page.locator('#cancelBtn').click();await expect(page.locator('#userInput')).toBeEnabled();
     await expect.poll(async()=>(await(await page.request.get('/__test/stream-state',{params:{query}})).json()).waiting).toBe(false);
   }
@@ -160,16 +260,16 @@ test('sin conexión de Supabase se informa configuración pendiente', async ({ p
   }));
   await page.goto('/auth.html');
   await expect(page.getByRole('button', { name: 'Entrar al chat' })).toBeDisabled();
-  await expect(page.locator('#authFeedback')).toContainText('todavía no está conectado');
+  await expect(page.locator('#authFeedback')).toContainText('no está configurado');
   await page.goto('/notebooks.html');
-  await expect(page.getByRole('heading', { name: 'Tu biblioteca está lista para conectar.' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Explorar un ejemplo' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Supabase no está configurado.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Explorar un ejemplo' })).toHaveCount(0);
 });
 
 test('el Markdown del chat no ejecuta HTML de la respuesta del modelo', async ({ page }) => {
   await page.goto('/auth.html');
-  await page.getByRole('tab', { name: 'sign up' }).click();
-  await page.getByLabel('display name').fill('QA');
+  await page.getByRole('tab', { name: 'Crear cuenta' }).click();
+  await page.getByLabel('Nombre').fill('QA');
   await page.locator('#signUpEmail').fill(randomUUID() + '@example.test');
   await page.locator('#signUpPassword').fill('Testing123!');
   await page.getByRole('button', { name: 'Crear cuenta' }).click();
@@ -188,8 +288,8 @@ test('el Markdown del chat no ejecuta HTML de la respuesta del modelo', async ({
 test('el correo predeterminado completa confirmación PKCE en el mismo navegador', async ({ page, request }) => {
   const email = randomUUID() + '@confirm.example.test';
   await page.goto('/auth.html');
-  await page.getByRole('tab', { name: 'sign up' }).click();
-  await page.getByLabel('display name').fill('Cuenta con confirmación');
+  await page.getByRole('tab', { name: 'Crear cuenta' }).click();
+  await page.getByLabel('Nombre').fill('Cuenta con confirmación');
   await page.locator('#signUpEmail').fill(email);
   await page.locator('#signUpPassword').fill('Testing123!');
   await page.getByRole('button', { name: 'Crear cuenta' }).click();
@@ -206,8 +306,8 @@ test('el correo predeterminado completa confirmación PKCE en el mismo navegador
 test('un correo abierto sin la cookie del registro da instrucciones para iniciar sesión', async ({ page, request }) => {
   const email = randomUUID() + '@confirm.example.test';
   await page.goto('/auth.html');
-  await page.getByRole('tab', { name: 'sign up' }).click();
-  await page.getByLabel('display name').fill('Otro navegador');
+  await page.getByRole('tab', { name: 'Crear cuenta' }).click();
+  await page.getByLabel('Nombre').fill('Otro navegador');
   await page.locator('#signUpEmail').fill(email);
   await page.locator('#signUpPassword').fill('Testing123!');
   await page.getByRole('button', { name: 'Crear cuenta' }).click();
@@ -221,8 +321,8 @@ test('un correo abierto sin la cookie del registro da instrucciones para iniciar
 
 async function createSourceNotebook(page) {
   await page.goto('/auth.html');
-  await page.getByRole('tab', { name: 'sign up' }).click();
-  await page.getByLabel('display name').fill('QA documentos');
+  await page.getByRole('tab', { name: 'Crear cuenta' }).click();
+  await page.getByLabel('Nombre').fill('QA documentos');
   await page.locator('#signUpEmail').fill(randomUUID() + '@example.test');
   await page.locator('#signUpPassword').fill('Testing123!');
   await page.getByRole('button', { name: 'Crear cuenta' }).click();
@@ -544,7 +644,6 @@ test('workspace separa paneles, agrega en modal grande y abre/quita una fuente d
     await expect(page.locator('.sources-panel')).toBeHidden();
   }
   await openUpload(page);
-  const uploadWidth = (await page.locator('#uploadDialog').boundingBox()).width;
   await page.screenshot({ path:`qa-artifacts/upload-modal-${testInfo.project.name}.png`,fullPage:true });
   await page.getByLabel('Agregá documentos a este cuaderno').setInputFiles({ name:'apuntes.txt',mimeType:'text/plain',buffer:Buffer.from('Apuntes privados. <script>window.previewXss=true</script>') });
   await page.getByRole('button',{name:'Subir archivos',exact:true}).click();
@@ -554,7 +653,7 @@ test('workspace separa paneles, agrega en modal grande y abre/quita una fuente d
   await expect(page.locator('#originalPreview pre')).toContainText('Apuntes privados.');
   await expect(page.locator('#originalPreview script')).toHaveCount(0);
   expect(await page.evaluate(() => window.previewXss)).toBeUndefined();
-  if (page.viewportSize().width > 900) expect((await page.locator('#sourceTextPanel').boundingBox()).width).toBeLessThan(uploadWidth);
+  expect((await page.locator('#sourceTextPanel').boundingBox()).width).toBeGreaterThanOrEqual(page.viewportSize().width-2);
   await page.screenshot({ path:`qa-artifacts/source-modal-${testInfo.project.name}.png`,fullPage:true });
   await page.getByRole('button',{name:'Cerrar fuente',exact:true}).click();
   await page.getByRole('button',{name:'Eliminar apuntes.txt',exact:true}).click();
@@ -850,7 +949,6 @@ test('referencias sin extractos generados muestran texto original, deduplican y 
     await expect(page.locator('#streamingBlocks .rag-citation')).toHaveCount(1);
     await page.getByRole('button',{name:'Ver cita F1',exact:true}).click();
     await expect(page.locator('#citationQuote')).toHaveText('La energía solar proviene del sol.');
-    await expect(page.locator('#viewerNote')).toContainText('Vista previa del inicio del fragmento');
     await expect(page.locator('#sourceTextChunks pre')).toBeHidden();
     await page.locator('#sourceTextChunks summary').click();
     await expect(page.locator('#sourceTextChunks pre')).toHaveText('La energía solar proviene del sol.');
@@ -861,7 +959,6 @@ test('referencias sin extractos generados muestran texto original, deduplican y 
   expect(saved.segments[0].citations).toEqual([{sourceId:'F1',quote:'La energía solar proviene del sol.',kind:'source_reference'}]);
   await page.reload();await page.getByRole('button',{name:'Ver cita F1',exact:true}).first().click();
   await expect(page.locator('#citationQuote')).toHaveText('La energía solar proviene del sol.');
-  await expect(page.locator('#viewerNote')).toContainText('Vista previa del inicio del fragmento');
 });
 
 test('historial anterior conserva extractos y botones diferenciados sin convertirlos en vistas previas',async({page})=>{
@@ -872,6 +969,4 @@ test('historial anterior conserva extractos y botones diferenciados sin converti
   await page.reload();
   await page.getByRole('button',{name:'Ver cita F1 · extracto 2',exact:true}).click();
   await expect(page.locator('#citationQuote')).toHaveText('energía solar proviene del sol.');
-  await expect(page.locator('#viewerNote')).toContainText('Extracto conservado con esta respuesta');
-  await expect(page.locator('#viewerNote')).not.toContainText('Vista previa del inicio');
 });

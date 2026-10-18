@@ -51,6 +51,13 @@ test('la configuración pública no contiene claves y no sirve archivos privados
   }
   assert.equal((await request('/notebooks.html')).status, 200);
   assert.equal((await request('/assets/purify.min.js')).status, 200);
+  for (const path of ['/assets/pdf.mjs','/assets/pdf.worker.mjs']) {
+    const asset = await request(path);
+    assert.equal(asset.status, 200);
+    assert.match(asset.headers.get('content-type'), /javascript/);
+    await asset.arrayBuffer();
+  }
+  assert.equal((await request('/node_modules/pdfjs-dist/package.json')).status, 404);
 });
 
 test('requiere sesión para consultar cuadernos o llamar al modelo', async () => {

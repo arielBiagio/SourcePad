@@ -33,6 +33,7 @@ const appOptions = {
       if(question.startsWith('QA_STREAM_')){
         const segment=text=>({text,citations:[{sourceId:source.id}]});
         const first=segment('Primer bloque validado.');
+        if(question.includes('LAYOUT'))first.text='Primer bloque validado.\n'+'Concepto respaldado.\n'.repeat(35);
         if(question.includes('EMPTY_FIRST'))first.citations=[{}];
         if(question.includes('MULTI'))first.citations.push({sourceId:source.id});
         yield {choices:[{delta:{content:'{"insufficientEvidence":false,"segments":['+JSON.stringify(first)}}]};

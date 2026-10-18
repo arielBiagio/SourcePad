@@ -1,11 +1,12 @@
-import { readAnswerResponse } from './answer-stream.js?v=20261016-cleanup';
+import { readAnswerResponse } from './answer-stream.js?v=20261018';
+import {pinQuestion,restoreQuestion,releaseTurn,showLatest} from './chat-scroll.js';
 import {createHttpClient} from './http.js';
 import {createSourceViewer} from './source-viewer.js';
 import {createChatView} from './chat-view.js';
 import {createSourceList} from './source-list.js';
+import {clearChatSessions} from './chat-session.js';
 
 const $ = id => document.getElementById(id);
-const preview = new URLSearchParams(location.search).get('preview') === '1';
 let notebooks = [];
 let selected = null;
 let mode = 'create';
@@ -23,14 +24,12 @@ let turns = [];
 let historyLoading = false;
 let conversationVersion = 0;
 const localTurns = new Map();
-const previewSources = new Map();
-const previewFiles = new Map();
 const expandedSources = new Set();
 
-const http=createHttpClient({onUnauthorized:()=>location.replace('/auth.html')});
+const http=createHttpClient({onUnauthorized:()=>{clearChatSessions();location.replace('/auth.html');}});
 const api=http.json;
-const {downloadSource,openSource,showSourceText,closeSourceText}=createSourceViewer({$,api,http,preview,previewFiles,getNotebook:()=>selected,isBusy:()=>sourcesBusy,lockSources,sourceFeedback});
-const {clearAnswer,clearStreaming,followingChat,populateAnswer,validTurn,renderConversation}=createChatView({$,closeSourceText,getTurns:()=>turns});
+const {downloadSource,openSource,showSourceText,closeSourceText}=createSourceViewer({$,api,http,getNotebook:()=>selected,isBusy:()=>sourcesBusy,lockSources,sourceFeedback});
+const {clearAnswer,clearStreaming,populateAnswer,validTurn,renderConversation}=createChatView({$,closeSourceText,getTurns:()=>turns});
 
 const {renderSources}=createSourceList({$,getSources:()=>sources,isConfigured:()=>embeddingsConfigured,expandedSources,openSource,processSource,showSourceText,downloadSource,
   onIndex:source=>{pendingIndexSource=source;$('indexSourceMessage').textContent='Fuente: “'+source.filename+'”. Fragmentos pendientes: '+(source.chunk_count-(source.indexed_chunk_count||0))+'.';$('indexSourcePrompt').showModal();$('confirmIndexing').focus();},
@@ -84,7 +83,7 @@ function render() {
     const icon = document.createElement('span');
     icon.className = 'card-icon'; icon.textContent = '▤'; icon.setAttribute('aria-hidden', 'true');
     const title = document.createElement('h2'); title.textContent = notebook.title;
-    const description = document.createElement('p'); description.textContent = notebook.description || 'Un nuevo espacio para explorar.';
+    const description = document.createElement('p'); description.textContent = notebook.description || '';
     const footer = document.createElement('span'); footer.className = 'card-footer mono';
     const date = document.createElement('span');
     date.textContent = new Date(notebook.updated_at).toLocaleDateString('es', { day: 'numeric', month: 'short' });
@@ -121,7 +120,7 @@ function openDetail(notebook) {
   if (sourcesBusy) return;
   selected = notebook;
   $('detailTitle').textContent = notebook.title;
-  $('detailDescription').textContent = notebook.description || 'Todavía no agregaste una descripción.';
+  $('detailDescription').textContent = notebook.description || '';
   $('detailDialog').hidden = false; document.body.classList.add('workspace-open');
   const url = new URL(location.href); url.searchParams.set('notebook',notebook.id); history.replaceState(null,'',url);
   $('deleteSourcePrompt').close();
@@ -175,12 +174,10 @@ $('notebookForm').addEventListener('submit', async event => {
   $('formFeedback').textContent = '';
   try {
     if (mode === 'delete') {
-      if (!preview) await api(`/api/notebooks/${selected.id}`, { method: 'DELETE' });
+      await api(`/api/notebooks/${selected.id}`, { method: 'DELETE' });
       notebooks = notebooks.filter(n => n.id !== selected.id);
     } else {
-      const notebook = preview
-        ? { ...selected, ...input, id: mode === 'create' ? crypto.randomUUID() : selected.id, updated_at: new Date().toISOString() }
-        : (await api(mode === 'create' ? '/api/notebooks' : `/api/notebooks/${selected.id}`, {
+      const notebook = (await api(mode === 'create' ? '/api/notebooks' : `/api/notebooks/${selected.id}`, {
           method: mode === 'create' ? 'POST' : 'PATCH', body: JSON.stringify(input),
         })).notebook;
       notebooks = [notebook, ...notebooks.filter(n => n.id !== notebook.id)];
@@ -191,61 +188,44 @@ $('notebookForm').addEventListener('submit', async event => {
     else if (selected && mode === 'edit') { selected = notebooks.find(n => n.id === selected.id); $('detailTitle').textContent = selected.title; $('detailDescription').textContent = selected.description; renderWorkspaceNotebooks(); }
     else if (selected) openDetail(notebooks[0]);
     else $('createNotebook').focus();
-    feedback(mode === 'delete' ? 'Cuaderno eliminado.' : 'Cuaderno guardado.');
+    feedback();
   } catch (error) {
     $('formFeedback').textContent = error.name === 'TimeoutError' ? 'La conexión tardó demasiado. Intentá nuevamente.' : error.message;
     $('formFeedback').classList.add('error');
   } finally { busy = false; $('saveNotebook').disabled = false; }
 });
 $('logout').addEventListener('click', async () => {
-  if (preview) { location.assign('/auth.html'); return; }
   $('logout').disabled = true;
   try {
     await api('/api/auth/sign-out', { method: 'POST' });
+    clearChatSessions();
     location.replace('/auth.html');
   } catch (error) { feedback(error.message, true); $('logout').disabled = false; }
 });
 
 async function initialize() {
-  $('createNotebook').disabled = true;
-  $('emptyCreate').disabled = true;
-  $('loading').hidden = false;
-  $('retry').hidden = true;
-  feedback();
+  $('createNotebook').disabled = true; $('emptyCreate').disabled = true;
+  $('loading').hidden = false; $('retry').hidden = true; feedback();
   try {
-    if (preview) {
-      $('previewBanner').hidden = false;
-      $('userName').textContent = 'vista de ejemplo';
-      for (const element of document.querySelectorAll('.brand,.nav-active')) element.href = '/notebooks.html?preview=1';
-      notebooks = [
-        { id: crypto.randomUUID(), title: 'Inteligencia artificial', description: 'Ideas, conceptos y preguntas para aprender sobre modelos de lenguaje.', updated_at: new Date().toISOString() },
-        { id: crypto.randomUUID(), title: 'Mi próximo proyecto', description: 'Un lugar para ordenar lo que quiero construir.', updated_at: new Date().toISOString() },
-      ];
-    } else {
-      const config = await api('/api/config');
-      maxUploadBytes = config.maxUploadBytes || maxUploadBytes;
-      embeddingsConfigured = Boolean(config.embeddingsConfigured);
-      if (!config.notebooksEnabled) {
-        $('setupState').hidden = false; $('library').hidden = true; $('userName').textContent = 'conexión pendiente';
-        $('logout').hidden = true;
-        return;
-      }
-      const { user } = await api('/api/me');
-      $('userName').textContent = user.name || user.email;
-      const data = await api('/api/notebooks');
-      notebooks = data.notebooks;
-      if (data.hasMore) feedback('Se muestran los 200 cuadernos más recientes.');
+    const url=new URL(location.href);
+    if(url.searchParams.has('preview')){url.searchParams.delete('preview');history.replaceState(null,'',url);}
+    const config=await api('/api/config');
+    maxUploadBytes=config.maxUploadBytes||maxUploadBytes;
+    embeddingsConfigured=Boolean(config.embeddingsConfigured);
+    if(!config.notebooksEnabled){
+      $('setupState').hidden=false;$('library').hidden=true;$('logout').hidden=true;return;
     }
+    const {user}=await api('/api/me');$('userName').textContent=user.name||user.email;
+    const data=await api('/api/notebooks');notebooks=data.notebooks;
+    if(data.hasMore)feedback('Se muestran los 200 cuadernos más recientes.');
     render();
-    const requested = new URLSearchParams(location.search).get('notebook');
-    const book = notebooks.find(n => n.id === requested);
-    if (book) openDetail(book);
-    $('createNotebook').disabled = false;
-    $('emptyCreate').disabled = false;
-  } catch (error) {
-    feedback(error.name === 'TimeoutError' ? 'La conexión tardó demasiado. Volvé a intentar.' : error.message, true);
-    $('retry').hidden = false;
-  } finally { $('loading').hidden = true; }
+    const requested=new URLSearchParams(location.search).get('notebook');
+    const book=notebooks.find(n=>n.id===requested);if(book)openDetail(book);
+    $('createNotebook').disabled=false;$('emptyCreate').disabled=false;
+  }catch(error){
+    feedback(error.name==='TimeoutError'?'La conexión tardó demasiado. Volvé a intentar.':error.message,true);
+    $('retry').hidden=false;
+  }finally{$('loading').hidden=true;}
 }
 $('retry').addEventListener('click', initialize);
 initialize();
@@ -260,7 +240,7 @@ function lockSources(value) {
   for (const id of ['uploadSources', 'sourceFiles', 'refreshSources', 'closeDetail', 'editNotebook', 'confirmSourceDelete', 'cancelSourceDelete', 'moreSourceText', 'confirmIndexing', 'cancelIndexing', 'semanticQuery', 'addSources', 'closeUpload', 'workspaceCreate', 'clearConversation']) $(id).disabled = value;
   $('answerNotebook').disabled = value || historyLoading || !embeddingsConfigured || !sources.some(s => s.status === 'ready' && s.index_status === 'indexed');
   $('clearConversation').disabled = value || historyLoading;
-  $('embeddingsSetupNote').hidden = embeddingsConfigured && !preview;
+  $('embeddingsSetupNote').hidden = embeddingsConfigured;
   $('deleteNotebook').disabled = value || sources.length > 0;
   $('deleteNotebook').title = sources.length ? 'Eliminá las fuentes antes de eliminar el cuaderno.' : '';
   $('deleteNotebookNote').hidden = !sources.length;
@@ -277,7 +257,7 @@ async function loadSources() {
   sourceFeedback('Cargando fuentes…');
   $('uploadLimits').textContent = 'PDF, TXT o Markdown · hasta ' + (maxUploadBytes / 1048576).toLocaleString('es') + ' MiB por archivo';
   try {
-    const result = preview ? { documents: previewSources.get(notebookId) || [] } : await api('/api/notebooks/' + notebookId + '/documents');
+    const result = await api('/api/notebooks/' + notebookId + '/documents');
     if (version !== sourceVersion || selected.id !== notebookId) return;
     sources = result.documents; renderSources();
     sourceFeedback(result.hasMore ? 'Se muestran las 200 fuentes más recientes.' : '');
@@ -296,9 +276,7 @@ $('confirmSourceDelete').addEventListener('click', async () => {
   const document = pendingDelete;
   lockSources(true); sourceFeedback('Eliminando fuente…');
   try {
-    if (preview) {
-      previewSources.set(selected.id, sources.filter(item => item.id !== document.id)); previewFiles.delete(document.id);
-    } else await api('/api/notebooks/' + selected.id + '/documents/' + document.id, { method: 'DELETE' });
+    await api('/api/notebooks/' + selected.id + '/documents/' + document.id, { method: 'DELETE' });
     $('deleteSourcePrompt').close(); pendingDelete = null;
     await loadSources(); sourceFeedback('Fuente eliminada.');
   } catch (error) { await loadSources(); sourceFeedback(error.message, true); }
@@ -319,13 +297,8 @@ $('uploadForm').addEventListener('submit', async event => {
   for (const [index, file] of files.entries()) {
     sourceFeedback('Subiendo ' + (index + 1) + ' de ' + files.length + ': ' + file.name);
     try {
-      if (preview) {
-        const source = { id: crypto.randomUUID(), filename: file.name, extension: file.name.split('.').at(-1).toLowerCase(), byte_size: file.size, status: 'uploaded' };
-        previewSources.set(selected.id, [...(previewSources.get(selected.id) || []), source]); previewFiles.set(source.id, file);
-      } else {
         const form = new FormData(); form.append('file', file);
         await api('/api/notebooks/' + selected.id + '/documents', { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
-      }
       uploaded++;
     } catch (error) { lastError = error.message; }
   }
@@ -337,13 +310,12 @@ $('uploadForm').addEventListener('submit', async event => {
 });
 async function processSource(source) {
   if (sourcesBusy) return;
-  if (preview) { sourceFeedback('El procesamiento requiere una cuenta conectada. Esta vista de ejemplo no envía archivos al servidor.'); return; }
   source.status = 'processing'; renderSources(); lockSources(true);
-  sourceFeedback('Extrayendo texto y creando fragmentos… Si recargás o se interrumpe, podés reintentar después de dos minutos.');
+  sourceFeedback('Procesando…');
   try {
     const { document } = await api('/api/notebooks/' + selected.id + '/documents/' + source.id + '/process', { method: 'POST', signal: AbortSignal.timeout(90000) });
     await loadSources();
-    sourceFeedback('Texto extraído: ' + document.chunk_count + ' fragmento(s). Indexá la fuente para buscar o preguntar.');
+    sourceFeedback('Texto extraído: ' + document.chunk_count + ' fragmento(s).');
   } catch (error) {
     await loadSources(); sourceFeedback(error.name === 'TimeoutError' ? 'La conexión tardó demasiado. Actualizá el estado antes de reintentar.' : error.message, true);
   } finally { lockSources(false); }
@@ -367,7 +339,7 @@ $('confirmIndexing').addEventListener('click',async () => {
       sources = sources.map(s => s.id === document.id ? document : s); renderSources(); lockSources(true);
       if (complete) break;
     }
-    await loadSources(); sourceFeedback(complete ? 'Fuente indexada. Ya podés buscar en este cuaderno.' : 'Indexación detenida. Los lotes guardados se conservan; podés continuar.');
+    await loadSources(); sourceFeedback(complete ? 'Fuente indexada.' : 'Indexación detenida. Los lotes guardados se conservan; podés continuar.');
   } catch (error) { await loadSources(); sourceFeedback(error.name === 'TimeoutError' ? 'La conexión se interrumpió. Actualizá el estado antes de reintentar.' : error.message,true); }
   finally { $('stopIndexing').hidden = true; lockSources(false); }
 });
@@ -376,7 +348,7 @@ async function loadConversation() {
   historyLoading = true;
   $('historyFeedback').textContent = ''; $('historyFeedback').classList.remove('error');
   try {
-    const result = preview ? { turns: localTurns.get(bookId) || [] } : await api('/api/notebooks/'+bookId+'/conversation');
+    const result = await api('/api/notebooks/'+bookId+'/conversation');
     if (version !== conversationVersion || selected?.id !== bookId) return;
     const unsaved = (localTurns.get(bookId) || []).filter(t => t.answer.saved === false && validTurn(t));
     turns = [...result.turns.filter(validTurn),...unsaved]; localTurns.set(bookId,[...turns]); renderConversation();
@@ -386,7 +358,7 @@ async function loadConversation() {
     if (version !== conversationVersion || selected?.id !== bookId) return;
     turns = localTurns.get(bookId) || []; renderConversation();
     $('historyFeedback').textContent = error.message + ' Las respuestas nuevas se mostrarán igualmente.'; $('historyFeedback').classList.add('error');
-  } finally { if (version === conversationVersion) { historyLoading = false; lockSources(sourcesBusy); } }
+  } finally { if (version === conversationVersion) { historyLoading = false; lockSources(sourcesBusy); requestAnimationFrame(()=>{if(version===conversationVersion)showLatest($('chatScroll'));}); } }
 }
 $('clearConversation').addEventListener('click',() => { if (!sourcesBusy) { $('clearChatFeedback').textContent = ''; $('clearChatDialog').showModal(); } });
 $('cancelClearChat').addEventListener('click',() => { if (!busy) $('clearChatDialog').close(); });
@@ -395,27 +367,27 @@ $('confirmClearChat').addEventListener('click',async () => {
   conversationVersion++; historyLoading = false;
   busy = true; lockSources(true); $('confirmClearChat').disabled = true;
   try {
-    if (!preview) await api('/api/notebooks/'+selected.id+'/conversation',{ method: 'DELETE',body: JSON.stringify({ confirm: true }) });
+    await api('/api/notebooks/'+selected.id+'/conversation',{ method: 'DELETE',body: JSON.stringify({ confirm: true }) });
     localTurns.delete(selected.id); turns = []; renderConversation(); $('clearChatDialog').close(); $('historyFeedback').textContent = ''; $('historyFeedback').classList.remove('error');
   } catch (error) { $('clearChatFeedback').textContent = error.message; }
   finally { busy = false; lockSources(false); $('confirmClearChat').disabled = false; }
 });
 $('cancelAnswer').addEventListener('click',() => answerController?.abort());
 $('semanticSearchForm').addEventListener('submit',async event => {
-  event.preventDefault(); if (sourcesBusy || preview || $('answerNotebook').disabled) return;
+  event.preventDefault(); if (sourcesBusy || $('answerNotebook').disabled) return;
   const query = $('semanticQuery').value.trim();
   if (!query) return;
   const restoreQueryFocus = [$('semanticQuery'),$('answerNotebook')].includes(document.activeElement);
   conversationVersion++; historyLoading = false;
   lockSources(true);
-  $('searchFeedback').classList.remove('error'); $('searchFeedback').textContent = 'Consultando tus fuentes…';
+  $('searchFeedback').classList.remove('error'); $('searchFeedback').textContent = '';
   answerController = new AbortController(); $('cancelAnswer').hidden = false;
   $('semanticSearchForm').setAttribute('aria-busy','true');
   clearStreaming();
-  const follow=followingChat();
+  releaseTurn($('latestTurn'));
   $('streamingQuestion').textContent=query;$('streamingTurn').hidden=false;$('chatEmpty').hidden=true;
-  $('streamingBlocks').setAttribute('aria-busy','true');$('streamingStatus').textContent='Buscando en tus fuentes…';
-  if(follow)$('chatScroll').scrollTop=$('chatScroll').scrollHeight;
+  $('streamingBlocks').setAttribute('aria-busy','true');$('streamingStatus').textContent='Buscando…';
+  pinQuestion($('chatScroll'),$('streamingTurn'),$('streamingQuestion'));
   let receivedBlocks=0;
   try {
     const response = await http.response('/api/notebooks/' + selected.id + '/answer', {
@@ -423,15 +395,14 @@ $('semanticSearchForm').addEventListener('submit',async event => {
       signal: AbortSignal.any([answerController.signal,AbortSignal.timeout(100000)]),
     });
     const result=await readAnswerResponse(response,event=>{
-      const follow=followingChat();receivedBlocks++;
+      receivedBlocks++;
       populateAnswer({insufficientEvidence:false,segments:[event.segment],sources:event.sources},$('streamingBlocks'));
-      $('streamingStatus').textContent='Recibiendo bloques con referencias a tus fuentes…';$('searchFeedback').textContent='';
-      if(follow)$('chatScroll').scrollTop=$('chatScroll').scrollHeight;
+      $('streamingStatus').textContent='Respondiendo…';$('searchFeedback').textContent='';
     });
-    const shouldFollow=followingChat(),scrollTop=$('chatScroll').scrollTop;
+    const questionTop=$('streamingQuestion').getBoundingClientRect().top;
     const turn = { id: result.turnId || crypto.randomUUID(),question: query,answer: result };
     turns = [...turns,turn].slice(-30); localTurns.set(selected.id,[...turns]); renderConversation();
-    $('chatScroll').scrollTop=shouldFollow?$('chatScroll').scrollHeight:scrollTop;
+    restoreQuestion($('chatScroll'),$('latestTurn'),$('latestQuestion'),questionTop);
     $('searchFeedback').textContent = result.insufficientEvidence ? 'No hay evidencia suficiente en los fragmentos consultados.' : '';
     if (result.saved === false) { $('historyFeedback').textContent = result.historyWarning; $('historyFeedback').classList.add('error'); }
     else if (!turns.some(t => t.answer.saved === false)) { $('historyFeedback').textContent = ''; $('historyFeedback').classList.remove('error'); }
@@ -442,7 +413,7 @@ $('semanticSearchForm').addEventListener('submit',async event => {
       $('streamingStatus').textContent=rejected?'Respuesta incompleta · la generación fue rechazada y los bloques no se guardaron.':'Respuesta incompleta · guardado sin confirmar. Revisá el historial antes de repetirla.';
       $('streamingStatus').classList.add('error');$('streamingBlocks').setAttribute('aria-busy','false');
     }else clearStreaming();
-    $('searchFeedback').textContent = error.name === 'AbortError' ? 'Respuesta cancelada. Las llamadas ya enviadas pueden generar un cargo; no se reintentó automáticamente.' : error.name === 'TimeoutError' ? 'La respuesta tardó demasiado. No se reintentó automáticamente.' : error.message;
+    $('searchFeedback').textContent = error.name === 'AbortError' ? 'Respuesta cancelada.' : error.name === 'TimeoutError' ? 'La respuesta tardó demasiado. No se reintentó automáticamente.' : error.message;
     $('searchFeedback').classList.add('error');
   }
   finally {

@@ -1,0 +1,105 @@
+
+  *{ font-family: 'Space Grotesk', sans-serif; }
+  .mono{ font-family: 'JetBrains Mono', monospace; }
+  body{ background: var(--bg); }
+
+
+  .msg-in{
+    animation: msgIn .35s cubic-bezier(.16,1,.3,1) both;
+  }
+  @keyframes msgIn{
+    from{ opacity:0; transform: translateY(8px); }
+    to{ opacity:1; transform: translateY(0); }
+  }
+
+  .cursor-blink{
+    animation: blink 1s step-start infinite;
+  }
+  @keyframes blink{
+    50%{ opacity: 0; }
+  }
+
+  .dot{
+    animation: dotPulse 1.4s ease-in-out infinite;
+  }
+  .dot:nth-child(2){ animation-delay: .15s; }
+  .dot:nth-child(3){ animation-delay: .3s; }
+  @keyframes dotPulse{
+    0%,60%,100%{ opacity: .25; transform: scale(.85); }
+    30%{ opacity: 1; transform: scale(1); }
+  }
+
+  .glow-border:focus-within{
+    box-shadow: 0 0 0 1px var(--accent), 0 0 24px -4px rgba(124,156,255,0.35);
+  }
+
+  textarea{ field-sizing: content; }
+
+  /* Formato para el Markdown parseado dentro de las burbujas del asistente */
+  .markdown-content{ }
+  .markdown-content p{ margin: 0 0 0.6em 0; }
+  .markdown-content p:last-child{ margin-bottom: 0; }
+  .markdown-content strong{ color: var(--text); font-weight: 700; }
+  .markdown-content em{ font-style: italic; }
+  .markdown-content ul, .markdown-content ol{ margin: 0 0 0.6em 0; padding-left: 1.25em; }
+  .markdown-content ul{ list-style: disc; }
+  .markdown-content ol{ list-style: decimal; }
+  .markdown-content li{ margin-bottom: 0.2em; }
+  .markdown-content li:last-child{ margin-bottom: 0; }
+  .markdown-content a{ color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .markdown-content code{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+    background: rgba(124,156,255,0.12);
+    border: 1px solid var(--border);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  .markdown-content pre{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75em 1em;
+    overflow-x: auto;
+    margin: 0 0 0.6em 0;
+  }
+  .markdown-content pre code{
+    background: none;
+    border: none;
+    padding: 0;
+  }
+  .markdown-content blockquote{
+    border-left: 2px solid var(--accent);
+    padding-left: 0.75em;
+    margin: 0 0 0.6em 0;
+    color: var(--text-dim);
+  }
+  .markdown-content h1, .markdown-content h2, .markdown-content h3{
+    font-weight: 700;
+    margin: 0.4em 0 0.4em 0;
+  }
+  .markdown-content hr{ border: none; border-top: 1px solid var(--border); margin: 0.6em 0; }
+
+.general-page{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.general-workspace{flex:1;min-height:0;width:min(1100px,100%);margin:0 auto;padding:20px;display:flex}
+.general-chat-panel{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:15px}
+.general-heading{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+.general-heading h1{margin:0;font-size:17px;font-weight:500}
+.general-heading>.quiet{margin-left:auto;font-size:12px;padding:8px 12px}
+.chat-state{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:11px}
+#statusDot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+.general-messages{display:flex;flex-direction:column;gap:24px;flex:1;min-height:0;overflow:auto;padding:28px clamp(20px,3vw,48px);overflow-anchor:none}
+.general-turn{display:flex;flex-direction:column;gap:24px;flex-shrink:0}
+.general-turn>.msg-in{animation:none}
+.general-messages .msg-in{flex-shrink:0}
+.general-messages .msg-in>div{overflow-wrap:anywhere;min-width:0}
+.general-messages .items-end>div{font-size:15px;line-height:1.65}
+.general-messages .markdown-content{font-size:17px;line-height:1.7;padding:0;border:0;background:none}
+.general-messages .markdown-content pre{max-width:100%}
+.interrupted-answer{display:block;margin-top:10px;color:var(--dim);font-size:12px;font-family:inherit}
+.general-composer{padding:14px 20px;background:#141924;border-top:1px solid var(--border);flex-shrink:0}
+.general-composer form{display:flex;align-items:flex-end;gap:10px}
+.general-composer textarea{width:100%;min-width:0;resize:none;min-height:44px;max-height:144px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);padding:10px 12px;line-height:22px;outline:none}
+.general-composer textarea:focus{border-color:var(--accent)}
+.general-composer button{height:44px;min-width:44px;display:grid;place-items:center;padding:10px}
+@media(max-width:700px){.general-workspace{padding:12px}.general-heading{padding:14px}.general-messages{padding:18px}.general-composer{padding:12px}.general-heading h1{font-size:15px}.chat-state{font-size:10px}}

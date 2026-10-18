@@ -1,4 +1,5 @@
 import {createHttpClient} from './http.js';
+import {clearChatSessions} from './chat-session.js';
 const http=createHttpClient();
 const $ = id => document.getElementById(id);
 const signInForm = $('signInForm');
@@ -29,7 +30,6 @@ function setMode(mode) {
     $(id).style.color = active ? 'var(--text)' : 'var(--text-dim)';
   }
   $('authTitle').textContent = signIn ? 'Iniciar sesión' : 'Crear cuenta';
-  $('authDescription').textContent = signIn ? 'Ingresá para abrir tu espacio personal.' : 'Creá tu cuenta para organizar tus ideas en cuadernos.';
   if (config?.ready) showFeedback('');
 }
 async function requestAuth(path, body) {
@@ -56,7 +56,7 @@ async function submit(event, registration) {
       setBusy(false);
       return;
     }
-    location.assign(config.home);
+    clearChatSessions();location.assign(config.home);
   } catch (error) {
     showFeedback(error.name === 'TimeoutError' ? 'La conexión tardó demasiado. Intentá nuevamente.' : `No se pudo ${registration ? 'crear la cuenta' : 'iniciar sesión'}: ${error.message}`, 'error');
     setBusy(false);
@@ -66,12 +66,11 @@ $('signInTab').addEventListener('click', () => setMode('sign-in'));
 $('signUpTab').addEventListener('click', () => setMode('sign-up'));
 signInForm.addEventListener('submit', event => submit(event, false));
 signUpForm.addEventListener('submit', event => submit(event, true));
-$('forgotPassword').addEventListener('click', () => showFeedback('La recuperación de contraseña estará disponible en una próxima actualización.'));
 setBusy(false);
 try {
   config = await http.json('/api/config', { signal: AbortSignal.timeout(10000) });
   setBusy(false);
-  if (!config.ready) showFeedback('Tu espacio todavía no está conectado. Mientras tanto, podés explorar los cuadernos de ejemplo.');
+  if (!config.ready) showFeedback('El servicio de acceso no está configurado.', 'error');
   else {
     try {
       await http.json('/api/me',{signal:AbortSignal.timeout(10000)});

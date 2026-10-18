@@ -1,15 +1,15 @@
+import {releaseTurn} from './chat-scroll.js';
 export function createChatView({$,closeSourceText,getTurns}) {
   function clearAnswer() {
+    releaseTurn($('latestTurn'));
     $('ragAnswer').hidden = true; $('ragAnswerText').replaceChildren();
     $('latestQuestion').hidden = true; $('latestQuestion').textContent = '';
   }
   function clearStreaming() {
+    releaseTurn($('streamingTurn'));
     $('streamingTurn').hidden=true;$('streamingBlocks').replaceChildren();$('streamingQuestion').textContent='';
     $('streamingStatus').textContent='';$('streamingStatus').classList.remove('error');$('streamingBlocks').setAttribute('aria-busy','false');
     $('chatEmpty').hidden=getTurns().length>0;
-  }
-  function followingChat() {
-    const chat=$('chatScroll');return chat.scrollHeight-chat.scrollTop-chat.clientHeight<80;
   }
   function openCitation(result,citation) {
     const source = result.sources.find(s => s.id === citation.sourceId);
@@ -23,9 +23,6 @@ export function createChatView({$,closeSourceText,getTurns}) {
     const article = document.createElement('details'); article.className = 'text-chunk citation-context';
     const label = document.createElement('summary'); label.textContent = 'Ver fragmento completo';
     const text = document.createElement('pre'); text.textContent = source.content; article.append(label,text); $('sourceTextChunks').append(article);
-    $('viewerNote').textContent = citation.kind==='source_reference'
-      ? 'Vista previa del inicio del fragmento referenciado, copiada por la app. Abrí el fragmento completo para revisar el respaldo de la respuesta; la referencia no garantiza que la interpretación sea correcta.'
-      : 'Extracto conservado con esta respuesta. La cita comprueba procedencia, no garantiza toda la interpretación.';
     $('sourceTextPanel').showModal();
   }
   function populateAnswer(result,textHost) {
@@ -73,5 +70,5 @@ export function createChatView({$,closeSourceText,getTurns}) {
     }
   }
 
-  return {clearAnswer,clearStreaming,followingChat,populateAnswer,validTurn,renderConversation};
+  return {clearAnswer,clearStreaming,populateAnswer,validTurn,renderConversation};
 }

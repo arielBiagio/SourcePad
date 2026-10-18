@@ -1,4 +1,3 @@
-:root{color-scheme:dark;--bg:#0b0e14;--surface:#11151d;--surface-2:#161b26;--border:#232b3a;--text:#e6eaf2;--dim:#8d99ab;--accent:#7c9cff;--mint:#5eead4;--danger:#f87171}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:14px}
 button,input,textarea{font:inherit}
@@ -251,12 +250,12 @@ dialog input,dialog textarea{display:block;width:100%;background:var(--bg);color
 .upload-formats small{display:block;font-size:10px;color:var(--dim);margin-top:8px;line-height:1.6}
 .source-viewer{width:min(610px,calc(100% - 32px));max-height:82dvh;padding:25px}
 .source-viewer h2{font-size:19px;line-height:1.5;margin:16px 0}
+.source-viewer .feedback:empty{display:none}
 .source-viewer .viewer-tabs{display:flex;gap:8px;margin:16px 0}
 .source-viewer .viewer-tabs button{font-size:10px;padding:8px 12px}
 .source-viewer .text-chunk pre{font-size:11px}
 .citation-context>summary{cursor:pointer;color:var(--dim);font-size:12px;line-height:1.7;list-style-position:inside}
 .citation-context[open]>summary{margin-bottom:14px}
-.source-viewer iframe{display:block;width:100%;height:50dvh;background:#fff;border:1px solid var(--border);border-radius:7px}
 .source-viewer #originalPreview pre{font-size:12px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
 .source-viewer .citation-meta{color:var(--mint);font-size:12px;margin:0 0 16px}
 .source-viewer #citationQuote{font-size:15px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;border-left:2px solid var(--accent);padding:12px 16px;margin:0 0 20px;background:#7c9cff08;border-radius:0 7px 7px 0}
@@ -264,3 +263,20 @@ dialog input,dialog textarea{display:block;width:100%;background:var(--bg);color
 @media(max-height:800px){.chat-empty{padding:0 10px}.chat-symbol{width:48px;height:48px;border-radius:15px;font-size:28px}.chat-empty h2{font-size:20px;margin:13px 0 8px}.chat-empty p{font-size:11px;margin:6px 0}.chat-empty .mono{display:none}.chat-scroll:has(#chatEmpty:not([hidden])){padding:18px}}
 @media(max-width:1100px) and (min-width:901px){.workspace{padding:14px;gap:12px}.workspace-columns{grid-template-columns:220px minmax(270px,1fr) 210px;gap:10px}.work-panel{padding:14px}.chat-panel{padding:0}.chat-scroll{padding:18px}.chat-composer{padding:12px}.composer-actions{justify-content:flex-end}.composer-actions button{font-size:9px;padding:9px}.panel-heading .count-pill{display:none}}
 @media(max-width:900px){.workspace{padding:12px;height:calc(100dvh - 86px);gap:10px}.workspace-heading{gap:12px}.workspace-heading h1{font-size:18px}.workspace-heading .intro,.workspace-badge{display:none}.workspace-heading>.quiet{font-size:10px;padding:8px 10px}.workspace-tabs{display:flex;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px}.workspace-tabs button{flex:1;padding:9px;border:0;border-radius:7px;background:none;color:var(--dim);font-size:12px}.workspace-tabs button[aria-pressed=true]{background:#7c9cff22;color:var(--accent)}.workspace-columns{display:block;min-height:0;flex:1}.work-panel{height:100%;display:none}.work-panel.is-active{display:flex}.chat-scroll{padding:18px}.chat-empty{padding:25px 10px}.chat-empty h2{font-size:22px}.chat-panel>.panel-heading{padding:14px}.chat-composer{padding:12px}.upload-dialog{padding:23px}.upload-dialog h2{font-size:25px}.upload-dialog .upload-zone{padding:20px}.upload-formats{gap:7px}.upload-formats>span{padding:12px 9px;font-size:11px}.upload-formats small{font-size:9px}.workspace-heading .eyebrow{font-size:8px}}
+
+.layout{display:block;max-width:1200px;margin:0 auto;min-height:calc(100dvh - 72px)}
+.layout main{padding:36px 24px}
+.chat-scroll{overflow-anchor:none}
+.intro:empty{display:none}
+.source-viewer.is-original[open]{inset:0;margin:0;width:100vw;height:100dvh;max-width:none;max-height:none;border:0;border-radius:0;padding:16px;display:flex;flex-direction:column;overflow:hidden}
+.source-viewer.is-original .dialog-heading,.source-viewer.is-original h2,.source-viewer.is-original .viewer-tabs,.source-viewer.is-original .feedback{flex-shrink:0}
+.source-viewer.is-original h2{margin:8px 0;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-viewer.is-original .viewer-tabs{margin:8px 0}
+.source-viewer.is-original #originalPreview{flex:1;min-height:0;overflow:auto}
+.source-viewer.is-original #originalPreview pre{margin:0;padding:16px;font-size:15px}
+.source-viewer.is-original #originalPreview.pdf-preview{display:flex;flex-direction:column;overflow:hidden}
+.pdf-toolbar{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 0 12px;flex-shrink:0}
+.pdf-toolbar button{padding:5px 12px;font-size:17px;min-width:38px}
+.pdf-toolbar [role=status]{min-width:64px;text-align:center;font-size:13px}
+.pdf-stage{flex:1;min-height:0;overflow:auto;background:var(--bg);padding:16px}
+.pdf-stage canvas{display:block;background:white;margin:0 auto;max-width:none}

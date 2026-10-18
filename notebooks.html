@@ -3,43 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mis cuadernos · My Chat AI</title>
+  <title>Mis cuadernos · SourcePad</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/notebooks.css?v=20261016-source-references">
-  <script type="module" src="/assets/notebooks.js?v=20261016-cleanup"></script>
+  <link rel="stylesheet" href="/assets/notebooks.css?v=20261018">
+  <link rel="stylesheet" href="/assets/theme.css?v=20261018-sourcepad-scrollbars">
+  <script type="module" src="/assets/notebooks.js?v=20261018-sourcepad"></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/notebooks.html"><span class="brand-icon">&gt;_</span><span>My Chat AI<small class="mono">personal workspace</small></span></a>
+    <a class="brand" href="/notebooks.html"><span class="brand-icon">&gt;_</span><span>SourcePad</span></a>
+    <nav class="app-nav" aria-label="Navegación"><a href="/notebooks.html" aria-current="page">Cuadernos</a><a href="/index.html">Chat general</a></nav>
     <div class="account"><span id="userName" class="mono">…</span><button id="logout" class="quiet">Salir</button></div>
   </header>
-  <div id="previewBanner" class="banner" hidden>Vista de ejemplo · los cambios se descartan al recargar. No usa cuentas, documentos ni APIs reales.</div>
   <div class="layout">
-    <aside class="sidebar">
-      <p class="eyebrow">TU ESPACIO</p>
-      <a class="nav-active" href="/notebooks.html">▤ &nbsp; Mis cuadernos <span id="notebookCount">0</span></a>
-      <a href="/index.html" class="nav-link">↗ &nbsp; Chat general</a>
-      <div class="sidebar-note"><span class="mono">05 / preguntas con fuentes</span><p>Un espacio separado para cada tema, proyecto o idea.</p><small>Buscá por significado o preguntale a tus fuentes con citas verificables.</small></div>
-      <span class="sidebar-footer mono"><span class="dot"></span> espacio personal</span>
-    </aside>
     <main>
       <div class="page-heading">
-        <div><p class="eyebrow">BIBLIOTECA PERSONAL</p><h1>Mis cuadernos<span class="cursor">_</span></h1><p class="intro">Dale un lugar a lo que querés entender.</p></div>
-        <button id="createNotebook" class="primary">+ Nuevo cuaderno</button>
+        <div><h1>Mis cuadernos <span id="notebookCount" class="count-pill">0</span></h1></div>
+        <button id="createNotebook" class="primary" disabled>+ Nuevo cuaderno</button>
       </div>
       <div id="setupState" class="setup" hidden>
-        <span class="mono">CONEXIÓN PENDIENTE</span><h2>Tu biblioteca está lista para conectar.</h2>
-        <p>Los cuadernos se guardarán en tu cuenta cuando el espacio esté conectado.</p>
-        <a class="primary link-button" href="/notebooks.html?preview=1">Explorar un ejemplo →</a>
-        <a href="/index.html" class="text-link">Volver al chat actual</a>
+        <h2>Supabase no está configurado.</h2>
       </div>
       <section id="library" aria-label="Biblioteca de cuadernos">
         <div class="toolbar"><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Buscar en tus cuadernos…" aria-label="Buscar cuadernos"></label><span id="listLabel" class="mono">cargando…</span></div>
         <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
         <button id="retry" class="quiet" hidden>Reintentar</button>
         <div id="loading" class="empty"><span class="mono">abriendo biblioteca…</span></div>
-        <div id="emptyState" class="empty" hidden><span class="empty-icon">▤</span><h2>Un cuaderno, una nueva idea.</h2><p>Creá tu primer cuaderno para organizar un tema.</p><button id="emptyCreate" class="primary">Crear mi primer cuaderno →</button></div>
+        <div id="emptyState" class="empty" hidden><span class="empty-icon">▤</span><h2>Sin cuadernos</h2><button id="emptyCreate" class="primary" disabled>Nuevo cuaderno</button></div>
         <p id="noResults" class="empty" hidden>No hay cuadernos que coincidan con esa búsqueda.</p>
         <div id="notebookGrid" class="grid"></div>
       </section>
@@ -47,7 +38,7 @@
   </div>
   <dialog id="notebookDialog" aria-labelledby="dialogTitle">
     <form id="notebookForm">
-      <div class="dialog-heading"><span class="eyebrow">CUADERNO PERSONAL</span><button id="closeDialog" type="button" class="icon-button" aria-label="Cerrar">×</button></div>
+      <div class="dialog-heading"><span></span><button id="closeDialog" type="button" class="icon-button" aria-label="Cerrar">×</button></div>
       <h2 id="dialogTitle">Nuevo cuaderno</h2>
       <p id="deleteMessage" hidden>Se eliminará este cuaderno. Esta acción no se puede deshacer.</p>
       <div id="editorFields">
@@ -59,7 +50,7 @@
     </form>
   </dialog>
   <section id="detailDialog" class="workspace" aria-labelledby="detailTitle" hidden>
-    <div class="workspace-heading"><button id="closeDetail" class="quiet" aria-label="Cerrar cuaderno">← Biblioteca</button><div><p class="eyebrow">ESPACIO DE TRABAJO</p><h1 id="detailTitle"></h1><p id="detailDescription" class="intro"></p></div><span class="workspace-badge mono">● privado</span></div>
+    <div class="workspace-heading"><button id="closeDetail" class="quiet" aria-label="Cerrar cuaderno">← Biblioteca</button><div><h1 id="detailTitle"></h1><p id="detailDescription" class="intro"></p></div></div>
     <nav class="workspace-tabs" aria-label="Paneles del cuaderno"><button data-show-panel="sources" aria-pressed="false">Fuentes</button><button data-show-panel="chat" aria-pressed="true">Chat</button><button data-show-panel="tools" aria-pressed="false">Cuadernos</button></nav>
     <div class="workspace-columns">
       <aside class="work-panel sources-panel" data-panel="sources" aria-label="Fuentes del cuaderno">
@@ -67,19 +58,20 @@
         <button id="addSources" class="add-sources">＋ Agregar fuentes</button>
         <p id="sourceFeedback" class="feedback" role="status" aria-live="polite"></p>
         <ul id="sourceList" class="source-list" aria-label="Documentos"></ul>
-        <p id="noSources" class="sources-empty" hidden>Tus documentos empiezan acá.<br>Agregá PDF, TXT o Markdown.</p>
-        <p class="panel-note">Procesá e indexá cada fuente para incluirla en las respuestas. Podés quitarla con ×.</p>
-        <p id="embeddingsSetupNote" class="source-stage-note" hidden>Configurá OpenRouter para indexar y preguntar. La vista de ejemplo no usa APIs reales.</p>
+        <p id="noSources" class="sources-empty" hidden>Sin fuentes</p>
+        <p id="embeddingsSetupNote" class="source-stage-note" hidden>OpenRouter no está configurado.</p>
         <button id="stopIndexing" class="quiet" type="button" hidden>Detener después de este lote</button>
       </aside>
       <section class="work-panel chat-panel is-active" data-panel="chat" aria-label="Chat del cuaderno">
         <div class="panel-heading"><h2>Chat</h2><button id="clearConversation" class="quiet">Borrar chat</button></div>
         <p id="historyFeedback" class="feedback history-feedback" role="status"></p>
         <div id="chatScroll" class="chat-scroll">
-          <div id="chatEmpty" class="chat-empty"><div class="chat-symbol">✳</div><h2>¿Qué querés descubrir?</h2><p>Preguntá sobre tus fuentes indexadas.<br>Las respuestas te muestran de dónde viene cada idea.</p><span class="mono">TUS DOCUMENTOS · TU CONTEXTO</span></div>
+          <div id="chatEmpty" class="chat-empty"><div class="chat-symbol" aria-hidden="true">✳</div></div>
           <div id="conversationHistory"></div>
+          <article id="latestTurn">
           <p id="latestQuestion" class="chat-question" hidden></p>
           <section id="ragAnswer" class="rag-answer" aria-labelledby="ragAnswerTitle" hidden><h3 id="ragAnswerTitle" class="sr-only" tabindex="-1">Respuesta del asistente</h3><div id="ragAnswerText"></div></section>
+          </article>
           <article id="streamingTurn" class="chat-turn" hidden><p id="streamingQuestion" class="chat-question"></p><section class="rag-answer" aria-label="Respuesta en curso"><div id="streamingBlocks" aria-live="polite" aria-busy="false"></div><p id="streamingStatus" class="streaming-status" role="status"></p></section></article>
         </div>
         <div class="chat-composer">
@@ -93,16 +85,16 @@
         </div>
       </section>
       <aside class="work-panel tools-panel" data-panel="tools" aria-label="Cuadernos y herramientas">
-        <div class="panel-heading"><h2>Tu espacio</h2><span class="mono">▤</span></div><p class="eyebrow">CUADERNOS</p><div id="workspaceNotebooks" class="workspace-notebooks"></div><button id="workspaceCreate" class="quiet">＋ Nuevo cuaderno</button>
-        <details id="futureTools" class="future-tools"><summary>Herramientas <span class="count-pill">próximamente</span></summary><div class="future-tool"><span>◈</span><div>Resumen de fuentes<small>Una vista general de tus ideas</small></div></div><div class="future-tool"><span>⌘</span><div>Guía de estudio<small>Explorá lo que estás aprendiendo</small></div></div><div class="future-tool"><span>✧</span><div>Notas y conexiones<small>De una respuesta a una nueva idea</small></div></div></details>
+        <div class="panel-heading"><h2>Cuadernos</h2><span class="mono">▤</span></div><div id="workspaceNotebooks" class="workspace-notebooks"></div><button id="workspaceCreate" class="quiet">＋ Nuevo cuaderno</button>
+        <details id="futureTools" class="future-tools"><summary>Herramientas <span class="count-pill">próximamente</span></summary><div class="future-tool"><span>◈</span><div>Resumen de fuentes</div></div><div class="future-tool"><span>⌘</span><div>Guía de estudio</div></div><div class="future-tool"><span>✧</span><div>Notas y conexiones</div></div></details>
         <div class="notebook-settings"><button id="editNotebook" class="quiet">Editar cuaderno</button><button id="deleteNotebook" class="danger">Eliminar cuaderno</button><p id="deleteNotebookNote" class="panel-note" hidden>Eliminá sus fuentes antes de eliminar el cuaderno.</p></div>
       </aside>
     </div>
   </section>
-  <dialog id="uploadDialog" class="upload-dialog" aria-labelledby="uploadTitle"><div class="dialog-heading"><p class="eyebrow">AMPLIÁ TU CONTEXTO</p><button id="closeUpload" class="icon-button" aria-label="Cerrar subida">×</button></div><h2 id="uploadTitle">Agregá tus fuentes</h2><p class="intro">Un documento, muchas preguntas por descubrir.</p><form id="uploadForm" class="upload-zone"><span class="upload-symbol" aria-hidden="true">↥</span><label for="sourceFiles">Agregá documentos a este cuaderno</label><p>Elegí hasta 10 archivos. Se guardan en tu cuaderno privado.</p><input id="sourceFiles" name="files" type="file" accept=".pdf,.txt,.md" multiple><div class="upload-footer"><small id="uploadLimits">PDF, TXT o Markdown · hasta 10 MiB por archivo</small><button id="uploadSources" class="primary" type="submit">Subir archivos</button></div></form><p id="uploadFeedback" class="feedback" role="status"></p><div class="upload-formats"><span>▤ PDF<small>Manuales y documentos</small></span><span>≡ TXT<small>Texto sin formato</small></span><span>⌗ Markdown<small>Notas y apuntes</small></span></div><p class="source-stage-note">Subir no envía el archivo a la IA. Después podés procesarlo localmente e indexarlo con tu confirmación de costo.</p></dialog>
-  <dialog id="sourceTextPanel" class="source-viewer" aria-labelledby="sourceTextTitle"><div class="dialog-heading"><p class="eyebrow">VISTA DE LA FUENTE</p><button id="closeSourceText" class="icon-button" aria-label="Cerrar fuente">×</button></div><h2 id="sourceTextTitle">Texto extraído</h2><p id="citationMeta" class="citation-meta" hidden></p><blockquote id="citationQuote" hidden></blockquote><p id="sourceViewerFeedback" class="feedback" role="status"></p><div class="viewer-tabs"><button id="showExtracted" class="quiet">Texto extraído</button><button id="showOriginal" class="quiet">Ver original</button></div><div id="originalPreview" hidden></div><div id="sourceTextChunks"></div><button id="moreSourceText" class="quiet" type="button" hidden>Ver más fragmentos</button><p id="viewerNote" class="panel-note">El texto extraído conserva la página original; tablas y columnas pueden requerir revisión.</p></dialog>
-  <dialog id="deleteSourcePrompt" aria-labelledby="deleteSourceTitle"><h2 id="deleteSourceTitle">Quitar fuente</h2><p id="deleteSourceMessage"></p><p class="panel-note">Las citas ya guardadas en el historial conservan su extracto. Podés borrar el chat si también querés quitarlas.</p><div class="dialog-actions"><button id="cancelSourceDelete" class="quiet" type="button">Cancelar</button><button id="confirmSourceDelete" class="danger" type="button">Eliminar fuente</button></div></dialog>
-  <dialog id="indexSourcePrompt" aria-labelledby="indexTitle"><h2 id="indexTitle">Indexar con BGE-M3</h2><p id="indexSourceMessage"></p><p>El texto se enviará a OpenRouter y su proveedor de embeddings. Consume saldo. Sólo se envían los fragmentos pendientes, no el PDF original.</p><div class="dialog-actions"><button id="cancelIndexing" class="quiet" type="button">Cancelar</button><button id="confirmIndexing" class="primary" type="button">Confirmar e indexar</button></div></dialog>
-  <dialog id="clearChatDialog" aria-labelledby="clearChatTitle"><h2 id="clearChatTitle">Borrar conversación</h2><p>Se eliminarán las preguntas, respuestas y extractos guardados de este cuaderno. Tus archivos no se borran.</p><p id="clearChatFeedback" class="feedback error" role="alert"></p><div class="dialog-actions"><button id="cancelClearChat" class="quiet">Cancelar</button><button id="confirmClearChat" class="danger">Borrar conversación</button></div></dialog>
+  <dialog id="uploadDialog" class="upload-dialog" aria-labelledby="uploadTitle"><div class="dialog-heading"><span></span><button id="closeUpload" class="icon-button" aria-label="Cerrar subida">×</button></div><h2 id="uploadTitle">Agregá tus fuentes</h2><form id="uploadForm" class="upload-zone"><span class="upload-symbol" aria-hidden="true">↥</span><label for="sourceFiles">Agregá documentos a este cuaderno</label><input id="sourceFiles" name="files" type="file" accept=".pdf,.txt,.md" multiple><div class="upload-footer"><small id="uploadLimits">PDF, TXT o Markdown · hasta 10 MiB por archivo</small><button id="uploadSources" class="primary" type="submit">Subir archivos</button></div></form><p id="uploadFeedback" class="feedback" role="status"></p></dialog>
+  <dialog id="sourceTextPanel" class="source-viewer" aria-labelledby="sourceTextTitle"><div class="dialog-heading"><span></span><button id="closeSourceText" class="icon-button" aria-label="Cerrar fuente">×</button></div><h2 id="sourceTextTitle">Texto extraído</h2><p id="citationMeta" class="citation-meta" hidden></p><blockquote id="citationQuote" hidden></blockquote><p id="sourceViewerFeedback" class="feedback" role="status"></p><div class="viewer-tabs"><button id="showExtracted" class="quiet">Texto extraído</button><button id="showOriginal" class="quiet">Ver original</button></div><div id="originalPreview" hidden></div><div id="sourceTextChunks"></div><button id="moreSourceText" class="quiet" type="button" hidden>Ver más fragmentos</button></dialog>
+  <dialog id="deleteSourcePrompt" aria-labelledby="deleteSourceTitle"><h2 id="deleteSourceTitle">Quitar fuente</h2><p id="deleteSourceMessage"></p><p class="panel-note">Las citas guardadas permanecen en el chat.</p><div class="dialog-actions"><button id="cancelSourceDelete" class="quiet" type="button">Cancelar</button><button id="confirmSourceDelete" class="danger" type="button">Eliminar fuente</button></div></dialog>
+  <dialog id="indexSourcePrompt" aria-labelledby="indexTitle"><h2 id="indexTitle">Indexar con BGE-M3</h2><p id="indexSourceMessage"></p><p>Indexar envía el texto a OpenRouter y consume saldo.</p><div class="dialog-actions"><button id="cancelIndexing" class="quiet" type="button">Cancelar</button><button id="confirmIndexing" class="primary" type="button">Confirmar e indexar</button></div></dialog>
+  <dialog id="clearChatDialog" aria-labelledby="clearChatTitle"><h2 id="clearChatTitle">Borrar conversación</h2><p>Se borrará el chat, no los archivos.</p><p id="clearChatFeedback" class="feedback error" role="alert"></p><div class="dialog-actions"><button id="cancelClearChat" class="quiet">Cancelar</button><button id="confirmClearChat" class="danger">Borrar conversación</button></div></dialog>
 </body>
 </html>

@@ -2,17 +2,22 @@ import {CHAT_LIMITS} from './contracts.js';
 import {buildChatRequest} from './chat-context.js';
 import {createStreamRenderer} from './stream-renderer.js';
 import {createHttpClient} from './http.js';
+import {pinQuestion,releaseTurn,showLatest} from './chat-scroll.js';
+import {createChatSession,clearChatSessions} from './chat-session.js';
 
-const http=createHttpClient({onUnauthorized:()=>location.replace('/auth.html')});
+const http=createHttpClient({onUnauthorized:()=>{
+  clearTimeout(saveTimer); sessionChat=null; clearChatSessions(); location.replace('/auth.html');
+}});
 // URL relativa: evita CORS y usa el mismo origen que sirve este frontend.
 const API_URL = '/api/chat';
-const API_LABEL = `${window.location.host}/api/chat`;
 
 // Keep only the existing context window in request memory.
 let historialDeMensajes = [];
 
 // Cancel both the active request and any pending render for this generation.
 let cancelarGeneracionActual = null;
+let activeTurn=null,lastTurn=null;
+let sessionChat=null,transcript=[],saveTimer;
 
 // Scroll inteligente: si el usuario sube a leer mensajes viejos, dejamos de forzar el scroll al fondo
 let autoScrollActivo = true;
@@ -32,9 +37,22 @@ const statusPing = document.getElementById('statusPing');
 const statusText = document.getElementById('statusText');
 
 // auto-resize textarea
-input.addEventListener('input', () => {
+function resizeInput() {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 128) + 'px';
+}
+function persistChat() {
+  clearTimeout(saveTimer);
+  if (sessionChat && !sessionChat.save(transcript,input.value)) statusText.textContent='No se pudo conservar el chat en esta pestaña.';
+}
+function scheduleSave() {
+  clearTimeout(saveTimer); saveTimer=setTimeout(persistChat,250);
+}
+input.addEventListener('input', () => { resizeInput(); scheduleSave(); });
+window.addEventListener('pagehide', () => { cancelarGeneracionActual?.(); persistChat(); });
+window.addEventListener('pageshow', event => {
+  if (!event.persisted) return;
+  messages.hidden=true;setLoadingUI(true);clearBtn.disabled=true;void initializeSession();
 });
 
 input.addEventListener('keydown', (e) => {
@@ -48,6 +66,8 @@ clearBtn.addEventListener('click', () => {
   cancelarGeneracionActual?.();
   messages.replaceChildren();
   historialDeMensajes = [];
+  transcript=[];clearTimeout(saveTimer);sessionChat?.clear();input.value='';resizeInput();
+  activeTurn=null;lastTurn=null;
   autoScrollActivo = true;
 });
 
@@ -58,7 +78,7 @@ messages.addEventListener('scroll', () => {
 });
 
 function scrollToBottom() {
-  if (!autoScrollActivo) return;
+  if (activeTurn || !autoScrollActivo) return;
   messages.scrollTop = messages.scrollHeight;
 }
 
@@ -67,7 +87,7 @@ function addMessage({ role, text }) {
   wrapper.className = `msg-in flex flex-col gap-1.5 max-w-[85%] ${role === 'user' ? 'items-end self-end' : 'items-start self-start'}`;
 
   const label = document.createElement('span');
-  label.className = 'mono text-[10px] uppercase tracking-wider';
+  label.className = 'sr-only';
   label.style.color = 'var(--text-dim)';
   label.textContent = role === 'user' ? 'vos' : 'asistente';
 
@@ -79,15 +99,15 @@ function addMessage({ role, text }) {
     bubble.style.borderColor = 'var(--accent)';
     bubble.style.color = 'var(--text)';
   } else {
-    bubble.style.background = 'var(--surface-2)';
-    bubble.style.borderColor = 'var(--border)';
+    bubble.style.background = 'transparent';
+    bubble.style.borderColor = 'transparent';
     bubble.style.color = 'var(--text)';
   }
 
   bubble.textContent = text;
   wrapper.appendChild(label);
   wrapper.appendChild(bubble);
-  messages.appendChild(wrapper);
+  (activeTurn||messages).appendChild(wrapper);
   scrollToBottom();
   return bubble;
 }
@@ -98,7 +118,7 @@ function addLoadingBubble() {
   wrapper.id = 'loadingBubble';
 
   const label = document.createElement('span');
-  label.className = 'mono text-[10px] uppercase tracking-wider';
+  label.className = 'sr-only';
   label.style.color = 'var(--text-dim)';
   label.textContent = 'asistente';
 
@@ -116,7 +136,7 @@ function addLoadingBubble() {
 
   wrapper.appendChild(label);
   wrapper.appendChild(bubble);
-  messages.appendChild(wrapper);
+  (activeTurn||messages).appendChild(wrapper);
   scrollToBottom();
 }
 
@@ -130,7 +150,7 @@ function setStatus(state) {
   if (state === 'loading') {
     statusDot.style.background = 'var(--accent)';
     statusPing.style.background = 'var(--accent)';
-    statusText.textContent = 'esperando respuesta...';
+    statusText.textContent = 'Respondiendo…';
   } else if (state === 'error') {
     statusDot.style.background = '#F87171';
     statusPing.style.background = '#F87171';
@@ -138,7 +158,7 @@ function setStatus(state) {
   } else {
     statusDot.style.background = 'var(--ok)';
     statusPing.style.background = 'var(--ok)';
-    statusText.textContent = API_LABEL;
+    statusText.textContent = '';
   }
 }
 
@@ -162,20 +182,26 @@ async function sendMessage(text) {
   setLoadingUI(true); setStatus('loading'); addLoadingBubble();
   historialDeMensajes = [...historialDeMensajes,{role:'user',content:text}].slice(-CHAT_LIMITS.contextMessages);
   const controller = new AbortController();
-  let respuestaDeLaIA = '', bubbleActiva = null, finished = false, reader;
+  let respuestaDeLaIA = '', bubbleActiva = null, answerEntry = null, finished = false, reader;
   const renderer = createStreamRenderer({render: value => {
-    if (!bubbleActiva) { removeLoadingBubble(); bubbleActiva = addMessage({role:'assistant',text:''}); }
+    if (!bubbleActiva) {
+      removeLoadingBubble(); bubbleActiva = addMessage({role:'assistant',text:''});
+      answerEntry={role:'assistant',content:'',context:false,interrupted:true};transcript.push(answerEntry);
+    }
+    answerEntry.content=value;scheduleSave();
     bubbleActiva.innerHTML = DOMPurify.sanitize(marked.parse(value)); scrollToBottom();
   }});
-  function settle(state, save) {
+  function settle(state, save, interrupted=false) {
     if (finished) return;
     finished = true; renderer.stop(); removeLoadingBubble();
     if (save && respuestaDeLaIA) historialDeMensajes = [...historialDeMensajes,{role:'assistant',content:respuestaDeLaIA}].slice(-CHAT_LIMITS.contextMessages);
-    setStatus(state); setLoadingUI(false); input.focus(); cancelarGeneracionActual = null;
+    if(answerEntry){answerEntry.context=save;answerEntry.interrupted=interrupted;}
+    setStatus(state); setLoadingUI(false); input.focus({preventScroll:true}); cancelarGeneracionActual = null;activeTurn=null;
+    persistChat();
   }
   const cancel = () => {
     if (finished) return;
-    controller.abort(); renderer.finish(); settle('idle',true);
+    controller.abort(); renderer.finish(); settle('idle',true,true);
   };
   cancelarGeneracionActual = cancel;
   try {
@@ -195,8 +221,10 @@ async function sendMessage(text) {
     if (finished) return;
     if (error.name === 'AbortError') { cancel(); return; }
     renderer.stop(); removeLoadingBubble();
-    addMessage({role:'assistant',text:'No se pudo conectar con '+API_URL+'.\nDetalle: '+error.message});
-    settle('error',false);
+    const message='No se pudo completar la respuesta.\n'+error.message;
+    transcript.push({role:'assistant',content:message,context:false,error:true});
+    addMessage({role:'assistant',text:message});
+    settle('error',false,true);
   } finally {
     if (reader) { await reader.cancel().catch(()=>{}); reader.releaseLock(); }
   }
@@ -213,6 +241,7 @@ logoutBtn.addEventListener('click', async () => {
 
   try {
     await http.json('/api/auth/sign-out',{method:'POST'});
+    cancelarGeneracionActual?.();clearTimeout(saveTimer);sessionChat=null;clearChatSessions();
     window.location.replace('/auth.html');
   } catch (error) {
     statusText.textContent = error.message;
@@ -226,17 +255,41 @@ form.addEventListener('submit', (e) => {
   if (!text || sendBtn.disabled) return;
 
   autoScrollActivo = true; // al mandar un mensaje nuevo, siempre volvemos a seguir el flujo del chat
-  addMessage({ role: 'user', text });
+  if(lastTurn)releaseTurn(lastTurn);
+  activeTurn=document.createElement('article');activeTurn.className='general-turn';lastTurn=activeTurn;messages.append(activeTurn);
+  const question=addMessage({ role: 'user', text });
+  transcript.push({role:'user',content:text,context:true});
   input.value = '';
   input.style.height = 'auto';
+  persistChat();
   sendMessage(text);
+  pinQuestion(messages,lastTurn,question);
 });
 
 async function initializeSession() {
   try {
     const session = await http.json('/api/me');
+    sessionChat=createChatSession(session.user.id);
+    const saved=sessionChat.load();
+    transcript=saved?.messages||[];
+    historialDeMensajes=transcript.filter(message=>message.context).slice(-CHAT_LIMITS.contextMessages).map(({role,content})=>({role,content}));
+    messages.replaceChildren();activeTurn=null;lastTurn=null;
+    for(const message of transcript){
+      if(message.role==='user'||!activeTurn){
+        activeTurn=document.createElement('article');activeTurn.className='general-turn';messages.append(activeTurn);lastTurn=activeTurn;
+      }
+      const bubble=addMessage({role:message.role,text:message.content});
+      if(message.role==='assistant'&&!message.error)bubble.innerHTML=DOMPurify.sanitize(marked.parse(message.content));
+      if(message.interrupted){
+        const note=document.createElement('small');note.className='interrupted-answer';note.textContent='Respuesta interrumpida.';bubble.append(note);
+      }
+    }
+    activeTurn=null;messages.hidden=false;
+    input.value=saved?.draft||'';resizeInput();setLoadingUI(false);clearBtn.disabled=false;
+    setStatus('idle');
+    requestAnimationFrame(()=>showLatest(messages));
     userName.textContent = session.user?.name || session.user?.email || 'sesión activa';
-    input.focus();
+    input.focus({preventScroll:true});
   } catch (error) {
     setStatus('error');
     statusText.textContent = 'no se pudo validar la sesión';

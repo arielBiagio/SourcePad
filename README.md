@@ -1,10 +1,10 @@
-# My Chat AI
+# SourcePad
 
 Aplicación web de chat con inteligencia artificial y cuadernos documentales. Permite organizar fuentes privadas, consultar su contenido y revisar los fragmentos utilizados para generar cada respuesta mediante recuperación aumentada por generación (RAG).
 
 ## Funcionalidades
 
-- **Chat general:** respuestas por streaming con renderizado agrupado, presentación Markdown y envío de hasta seis mensajes recientes, con control del tamaño de la petición.
+- **Chat general:** respuestas por streaming con renderizado agrupado, presentación Markdown y envío de hasta seis mensajes recientes, con control del tamaño de la petición. La conversación y el borrador se conservan al navegar entre chat y cuadernos o recargar la misma pestaña, mientras la sesión esté activa.
 - **Autenticación:** registro, acceso y confirmación de correo con Supabase Auth; sesiones administradas en el servidor mediante cookies HttpOnly.
 - **Cuadernos:** creación, edición, búsqueda y eliminación de espacios independientes por tema.
 - **Fuentes documentales:** carga privada de PDF, TXT y Markdown, hasta 10 MiB por archivo; vista previa, descarga y eliminación.
@@ -12,9 +12,8 @@ Aplicación web de chat con inteligencia artificial y cuadernos documentales. Pe
 - **Indexación semántica:** embeddings BGE-M3 por lotes, con progreso, pausa entre lotes y reanudación.
 - **Preguntas con fuentes:** recuperación sobre todas las fuentes indexadas del cuaderno y streaming por bloques, con referencias comprobadas y vistas previas obtenidas del texto original.
 - **Historial por cuaderno:** preguntas y respuestas persistentes, con opción de borrar la conversación sin eliminar los documentos.
-- **Interfaz adaptable:** fuentes, chat y cuadernos en tres columnas; navegación por pestañas en móvil, modales de citas y detalles desplegables.
+- **Interfaz adaptable:** fuentes, chat y cuadernos en tres columnas; navegación estable entre pantallas, transiciones suaves, pestañas en móvil, modales de citas y detalles desplegables. Respeta la preferencia del sistema de reducir movimiento.
 - **Escritura compacta:** campo que crece con el texto; Enter envía y Shift + Enter inserta una línea. El modelo puede usar listas cuando mejoran la claridad.
-- **Vista de ejemplo:** exploración de la biblioteca sin cuentas ni llamadas a servicios de IA.
 
 El modo anterior de autenticación con Better Auth y SQLite se mantiene disponible para el chat general.
 
@@ -59,10 +58,9 @@ Frontend y API comparten el servidor de [localhost:3000](http://localhost:3000).
 
 - `/auth.html`: inicio de sesión y registro.
 - `/notebooks.html`: biblioteca y espacio de trabajo documental.
-- `/notebooks.html?preview=1`: ejemplo interactivo con datos temporales en memoria.
 - `/index.html`: chat general, separado del contexto documental.
 
-Sin un proyecto Supabase configurado, el modo `supabase` informa la configuración pendiente y permite acceder a la vista de ejemplo. Para usar el modo anterior, establecer `AUTH_PROVIDER=legacy`, generar un `BETTER_AUTH_SECRET` aleatorio de al menos 32 caracteres y ejecutar `npm run auth:migrate` antes de iniciar. Las cuentas de ambos proveedores son independientes.
+Sin un proyecto Supabase configurado, el modo `supabase` informa la configuración pendiente. Los cuadernos requieren una cuenta; no hay modo de demostración. Para usar el modo anterior, establecer `AUTH_PROVIDER=legacy`, generar un `BETTER_AUTH_SECRET` aleatorio de al menos 32 caracteres y ejecutar `npm run auth:migrate` antes de iniciar. Las cuentas de ambos proveedores son independientes.
 
 ## Flujo documental
 
@@ -74,11 +72,14 @@ Sin un proyecto Supabase configurado, el modo `supabase` informa la configuraci�
 
 Los bloques aparecen a medida que termina su generación y se validan sus referencias. El modelo resume y elige los fragmentos; el servidor obtiene su texto original y metadatos, sin exigirle al modelo transcribir citas. El historial sólo se guarda después de completar y validar la respuesta entera. Si se cancela o falla la generación, los bloques ya recibidos quedan marcados como respuesta incompleta; no se guarda una respuesta parcial ni hay reintentos automáticos. Si la conexión se pierde durante el guardado final, conviene recargar el historial antes de repetir la consulta: una respuesta completa podría haberse guardado aunque no llegara su confirmación.
 
+Al abrir un cuaderno se muestra el final del historial. Cada consulta nueva comienza con la pregunta arriba y la respuesta debajo; recibir bloques no fuerza el desplazamiento. La navegación y el tema oscuro se comparten entre chat, cuadernos y acceso. El original de una fuente se abre en un visor que ocupa todo el viewport; los PDF se dibujan localmente con controles de página y zoom, sin depender del plugin del navegador. Las citas permanecen en un modal compacto.
+
 Las respuestas documentales solicitan un esquema JSON con identificadores de fragmentos obligatorios. Cada referencia abre una vista previa del inicio del fragmento (hasta 300 caracteres), con el contexto completo desplegable; no es un pasaje elegido automáticamente que demuestre cada afirmación. Las referencias no garantizan que el resumen interprete correctamente el documento. Se pide responder lo que esté respaldado, aclarar las limitaciones si la información es parcial y avisar cuando no alcance para responder. Los errores técnicos se distinguen de la falta de información, sin registrar texto de documentos ni claves. Las citas del historial anterior siguen disponibles; este cambio no requiere migraciones ni reindexación.
 
 ## Privacidad y seguridad
 
 - Las claves se configuran exclusivamente en el entorno del servidor; no se entregan al navegador.
+- El chat general se conserva en `sessionStorage`, separado por usuario y sin tokens. Se restaura sólo después de validar la sesión; se limpia al cerrar sesión, iniciar otra o borrar el chat. No se sincroniza entre dispositivos y se elimina al cerrar la pestaña. Si el navegador bloquea el almacenamiento o se queda sin espacio, el chat continúa en memoria y avisa que no pudo conservarlo. Navegar durante una generación la interrumpe: se mantiene el texto recibido y no se reintenta automáticamente.
 - El acceso a cuadernos, documentos, vectores e historial se limita por usuario mediante autenticación y políticas RLS. Los originales se guardan en un bucket privado.
 - La extracción de texto es local al servidor. La indexación envía fragmentos a OpenRouter y su proveedor; las preguntas también envían la consulta y los fragmentos recuperados. Estas operaciones pueden consumir saldo.
 - Se solicita routing con `data_collection: deny`, pero esto no constituye una garantía absoluta de ausencia de retención. Revisar las políticas de los proveedores antes de cargar información sensible.
