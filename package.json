@@ -1,22 +1,43 @@
 {
-  "name": "mi_primer_bot",
+  "name": "sourcepad",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "prestart": "npm run build",
     "start": "node server.js",
     "auth:migrate": "node scripts/migrate-auth.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "backup:legacy": "node scripts/backup-legacy.js",
+    "build": "node scripts/build-css.js",
+    "test": "node --test --test-timeout=20000 tests/*.test.js",
+    "pretest:e2e": "npm run build",
+    "test:e2e": "playwright test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
     "better-auth": "^1.7.1",
     "better-sqlite3": "^12.11.1",
+    "cookie": "^2.0.1",
+    "dompurify": "^3.4.17",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "openai": "^6.45.0"
+    "express-rate-limit": "^8.7.1",
+    "marked": "^18.1.1",
+    "multer": "^2.4.0",
+    "openai": "^6.45.0",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite-pgvector": "^0.0.11",
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "postcss": "^8.5.30",
+    "tailwindcss": "^4.3.3"
   }
 }

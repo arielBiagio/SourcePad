@@ -1,0 +1,23 @@
+.auth-page{height:100dvh;overflow:hidden;display:grid;place-items:center;padding:20px}
+.auth-shell{position:relative;width:min(440px,100%);max-height:100%;overflow:auto;padding:34px;background:var(--surface);border:1px solid var(--border);border-radius:10px 22px 10px 10px;box-shadow:0 24px 80px #0004}
+.auth-shell::before{content:'';position:absolute;top:0;left:34px;width:44px;height:4px;background:var(--accent);border-radius:0 0 3px 3px}
+.auth-shell .brand{margin-bottom:26px;justify-content:center}
+.auth-shell h1{font-size:24px;font-weight:500;letter-spacing:-.8px;margin:28px 0 24px}
+.auth-tabs{display:flex;gap:4px;padding:0;border:0;border-bottom:1px solid var(--border);background:transparent}
+.auth-tabs button{flex:1;padding:12px 6px;border:0;background:transparent;color:var(--dim);border-radius:0;font-size:15px}
+.auth-tabs .tab-active{color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
+.auth-shell form>label{display:block;margin-bottom:18px;font-size:15px;color:var(--text)}
+.auth-field{display:flex;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px}
+.auth-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.auth-field input{width:100%;min-width:0;background:transparent;border:0;outline:0;color:var(--text);padding:12px 13px;border-radius:9px}
+.auth-field input::placeholder{color:var(--dim)}
+.auth-field input:-webkit-autofill,.auth-field input:-webkit-autofill:hover,.auth-field input:-webkit-autofill:focus,.auth-field input:autofill{-webkit-text-fill-color:var(--text);caret-color:var(--text);-webkit-box-shadow:0 0 0 1000px var(--bg) inset;box-shadow:0 0 0 1000px var(--bg) inset;transition:background-color 9999s ease-in-out 0s}
+.auth-shell form>.remember{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:14px;margin:0 0 20px}
+.remember input{accent-color:var(--accent);width:15px;height:15px}
+.auth-shell .submit-button{display:block;width:100%;padding:12px}
+.auth-feedback{margin:16px 0 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.auth-feedback:empty{display:none}
+.auth-feedback.is-error{color:var(--danger);font-size:16px;font-weight:500;animation:authError .4s ease-out}
+.auth-feedback.is-info{color:var(--dim)}
+@keyframes authError{0%{opacity:0;transform:translateY(-4px)}40%{transform:translateX(-4px)}70%{transform:translateX(3px)}100%{opacity:1;transform:none}}
+@media(max-width:480px){.auth-page{padding:14px}.auth-shell{padding:22px}.auth-shell .brand{margin-bottom:22px}}
