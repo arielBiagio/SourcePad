@@ -28,8 +28,8 @@ El generador predeterminado configurado en el proyecto es `qwen/qwen3.8-flash`. 
 Requisitos: Node.js 24 LTS, npm, una clave de OpenRouter para las funciones de IA y un proyecto Supabase para los cuadernos.
 
 ```powershell
-git clone https://github.com/arielBiagio/mi-primer-chat-ai.git
-cd mi-primer-chat-ai
+git clone https://github.com/arielBiagio/SourcePad.git
+cd SourcePad
 npm ci
 Copy-Item .env.example .env
 ```
